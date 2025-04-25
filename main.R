@@ -1,5 +1,6 @@
 library(corrplot)
-
+library(car)
+library(Hmisc) # for redundancy analysis
 
 
 data <- Country.data
@@ -98,6 +99,7 @@ shapiro_df_log
 # even tho the logarithms of the variables turned out not to be normal, we can still plot the results
 # to see if they look at least more normal than before:
 data_log <- as.data.frame(data_log) # Convert the list of log-transformed data back to a data frame
+data_log <- na.omit(data_log) # Drop rows with NA values
 par(mfrow=c(3, 3), mar=c(2, 2, 2, 2), oma=c(0, 0, 3, 0)) # 3 rows, 3 columns
 for(i in 2:9) {
   hist(data_log[,i], 
@@ -119,4 +121,95 @@ par(mfrow = c(1,1))# Close the current graphics device (if any) to reset plottin
 correlational_matrix <-cor(data[,2:10], use = "pairwise.complete.obs")
 corrplot(correlational_matrix, 
          tl.col = "black")
+
+# WITH THIS PLOT WE CAN SEE HOW CHILD MORTALITY IS STRONGLY CORRELATED WITH OTHER VARIABLES
+# AND IN GENERAL HOW THERE WERE NONLINEAR CORRELATION NOT SEEN BY THE CORRELATION MATRIX WITH 
+# NORMAL VARIABLES AND THE VIF, BUT EASILY SPOTTED WITH THE CORRELATION MATRIX AND THE VIF
+# ON LOGARITHMIC VARIABLES, CAUSE THESE RELATIONS ARE NOT LINEAR AND THE LOG LINEARIZES THEM
+
+
+cor_matrix <- cor(data_log[,1:9], use = "pairwise.complete.obs")  # Check correlation matrix
+corrplot(cor_matrix, 
+         tl.col = "black", main = "Log Correlation Matrix")  # Plot correlation matrix
+
+# Covariance Matrix
+cov_matrix <- cov(data)
+round(cov_matrix, 4)
+round(cor_matrix, 4)
+
+
+
+# VIF implementation
+
+predictors <- data[-1]  # Excludes first column
+
+# Calculate VIF - method 1 (using first remaining column as placeholder)
+vif_model <- lm(
+  as.formula(paste(names(predictors)[1], "~ .")),  # First predictor as placeholder
+  data = predictors
+)
+vif_values <- car::vif(vif_model)
+
+# Or method 2 (more elegant, using all predictors directly)
+vif_values <- car::vif(lm(~ ., data = predictors))  # ~. means "all columns"
+
+# Create results table
+vif_df <- data.frame(
+  variable = names(vif_values),
+  vif = vif_values,
+  vif_status = ifelse(vif_values > 5, ifelse(vif_values > 10, "High VIF (Issue)", "Concernably high"), "OK"),
+  row.names = NULL)
+
+# View results
+print(vif_df)
+
+
+### COMPUTE VIF ON THE LOGS
+predictors_log <- data_log[-1]  # Excludes first column
+
+# Calculate VIF - method 1 (using first remaining column as placeholder)
+vif_model <- lm(
+  as.formula(paste(names(predictors_log)[1], "~ .")),  # First predictor as placeholder
+  data = predictors_log
+)
+vif_values <- car::vif(vif_model)
+
+# Or method 2 (more elegant, using all predictors directly)
+vif_values <- car::vif(lm(~ ., data = predictors_log))  # ~. means "all columns"
+
+# Create results table
+vif_df <- data.frame(
+  variable = names(vif_values),
+  vif = vif_values,
+  vif_status = ifelse(vif_values > 5, ifelse(vif_values > 10, "High VIF (Issue)", "Concernably high"), "OK"),
+  row.names = NULL)
+
+# View results
+print(vif_df)
+
+# redundancy analysis on log
+redun_result <- redun(~ ., data = data_log, nk = 0) 
+print(redun_result)
+
+# redundancy analysis on original data
+redun_result <- redun(~ ., data = data[2:10], nk = 0) 
+print(redun_result)
+
+# standardize data
+
+data_scaled <- as.data.frame(scale(data[2:10]))
+data_scaled_log <- as.data.frame(scale(data_log))
+ 
+
+# let's run redundancy analysis on the scaled log data
+
+redun_result_scaled <- redun(~ ., data = data_scaled_log, nk = 0)
+print(redun_result_scaled)
+
+# we got the same results as before 
+
+# Let's do the PCA on the scaled log data now:
+
+pca_result <- prcomp(data_scaled_log)
+summary(pca_result)
 
