@@ -21,6 +21,14 @@ library(glmnet) # for ridge regression
 library(reshape2) # for reshaping the data easily
 library(viridis) # for color palettes
 library(tidyr)
+library(ggrepel)
+library(patchwork)
+library(RColorBrewer)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(countrycode)
+
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
@@ -228,6 +236,11 @@ print(redun_result)
 # LET'S TRY TO GET A LIL BIT DEEPER INTO THE CORRELATIONS AMONG INCOME, GDPP AND CHILD MORT
 # WE SPOTTED THOSE PROBLEMATIC VARIABLES DOING THE CORRELATION MATRIX 
 
+
+# PLEASE NOTE: FOR CONSIDERATIONS ON THE DIFFERENCE BETWEEN INCOME AND GDP PER CAPITA, REFER TO
+# notion page UNSUP/INCOME vs GDPP
+
+
 # standardize data
 
 data_scaled <- as.data.frame(scale(data[2:10]))
@@ -286,7 +299,7 @@ ggplot(data, aes(x = gdpp, y = income)) +
 
 # not satisfied with the power law fit, let's try to fit a polynomial regression on log data
 # Fit quadratic model
-poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data_log)
+poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data)
 
 # Plot
 ggplot(data, aes(x = gdpp, y = income)) +
@@ -299,122 +312,32 @@ ggplot(data, aes(x = gdpp, y = income)) +
   ) +
   theme_minimal()
 
+# Fit quadratic model on data_scaled_log
+poly2_model_log <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data_scaled_log)
+
+# Plot
+ggplot(data_scaled_log, aes(x = gdpp, y = income)) +
+  geom_point(color = 'blue', alpha = 0.6) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2, raw = TRUE), color = 'red', size = 1.2) +
+  labs(
+    title = "Quadratic Fit: Income vs GDP per capita",
+    x = "GDP per capita",
+    y = "Income"
+  ) +
+  theme_minimal()
+
+# We can clearly see a correlation spotted by correlation matrices.
+
+
 # now to officially say that these two are not linearly correlated, I will run a linear model
 # and compare the adjusted R^2:
 linear_model <- lm(income ~ gdpp, data = data_log)
 summary(linear_model)
 summary(poly2_model)
+summary(poly2_model_log) # adj R^2 = 0.951 which brought to a high vif(?)
 
 # matter of facts, the adj R^2 of the polynomial model is 0.8194 and is better than the linear 
 # one of 0.8008 and the RSE is lower on the polynomial (8193 compared to 8603)
-
-# Now, before doing the same analysis but with child_mort instead of "GDP per capita", let's do
-# the residual analysis. You can find further details on notion: progettoSL/unsup/resid_poly
-
-
-# Residuals and fitted (predicted) values
-res  <- residuals(poly2_model)
-fit  <- fitted(poly2_model)
-
-# Standardized and studentized residuals
-std_res   <- rstandard(poly2_model)
-stud_res  <- rstudent(poly2_model)
-
-df_res <- data.frame(
-  Fitted    = fit,
-  Residuals = res,
-  AbsRes    = abs(res)
-)
-
-ggplot(df_res, aes(x = Fitted, y = Residuals, color = AbsRes)) +
-  geom_point(alpha = 0.7, size = 2) +
-  scale_color_viridis(option = "plasma", name = "|Residual|") +
-  geom_smooth(method = "loess", se = FALSE, color = "black", size = 0.8) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-  labs(
-    title    = "Residuals vs Fitted (Quadratic Model)",
-    subtitle = "Points colored by magnitude of residuals",
-    x        = "Fitted values",
-    y        = "Residuals"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title    = element_text(face = "bold", size = 16),
-    plot.subtitle = element_text(size = 12, color = "grey40"),
-    legend.position = "right"
-  )
-
-qqnorm(std_res,
-       main = "Normal Q–Q Plot of Standardized Residuals")
-qqline(std_res, col = "red", lwd = 2)
-
-
-# Cook's distance and leverage
-
-#–– 1. Tidy data frame with diagnostics
-df_diag <- data %>%
-  mutate(
-    CooksD   = cooks.distance(poly2_model),
-    Leverage = hatvalues(poly2_model),
-    Obs      = row_number()
-  ) %>%
-  select(Obs, country, CooksD, Leverage)
-
-#–– Thresholds
-n  <- nrow(df_diag)
-p  <- length(coef(poly2_model))
-cd_thresh  <- 4 / (n - p)
-lev_thresh <- 2 * mean(df_diag$Leverage)
-
-#–– 2a. Cook’s Distance plot
-p_cd <- ggplot(df_diag, aes(x = Obs, y = CooksD)) +
-  geom_col(aes(fill = CooksD > cd_thresh), show.legend = FALSE) +
-  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
-  geom_hline(yintercept = cd_thresh, linetype = "dashed", color = "gray40") +
-  labs(
-    title = "Cook's Distance by Observation",
-    subtitle = sprintf("Red bars exceed threshold = %.3f", cd_thresh),
-    x = "Observation #",
-    y = "Cook's D"
-  ) +
-  theme_minimal(base_size = 14)
-
-#–– 2b. Leverage plot
-p_lev <- ggplot(df_diag, aes(x = Obs, y = Leverage)) +
-  geom_col(aes(fill = Leverage > lev_thresh), show.legend = FALSE) +
-  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
-  geom_hline(yintercept = lev_thresh, linetype = "dashed", color = "gray40") +
-  labs(
-    title = "Leverage (Hat Values) by Observation",
-    subtitle = sprintf("Red bars exceed threshold = %.3f", lev_thresh),
-    x = "Observation #",
-    y = "Leverage"
-  ) +
-  theme_minimal(base_size = 14)
-
-#–– Display them side by side
-
-grid.arrange(p_cd, p_lev, ncol = 1)
-
-# which obervations exceed the threshold?
-# Cook's D
-high_cd <- df_diag %>%
-  filter(CooksD > cd_thresh) %>%
-  arrange(desc(CooksD))
-
-# Leverage
-high_lev <- df_diag %>%
-  filter(Leverage > lev_thresh) %>%
-  arrange(desc(Leverage))
-
-# Print them
-cat("Observations with high Cook's D:\n")
-print(high_cd %>% select(Obs, country, CooksD))
-
-cat("\nObservations with high Leverage:\n")
-print(high_lev %>% select(Obs, country, Leverage))
-
-# Overall this is a good model, but we have some outliers and high leverage points
 
 
 # same with child_mort
@@ -463,120 +386,28 @@ ggplot(data, aes(x = child_mort, y = income)) +
     y = "Income"
   ) +
   theme_minimal()
+# Fit quadratic model on logs 
+poly2_model <- lm(income ~ poly(child_mort, 2, raw = TRUE), data = data_scaled_log)
+
+# Plot quadratic fit
+ggplot(data_scaled_log, aes(x = child_mort, y = income)) +
+  geom_point(color = 'blue', alpha = 0.6) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2, raw = TRUE), color = 'red', size = 1.2) +
+  labs(
+    title = "Quadratic Fit: Income vs Child Mortality",
+    x = "Child Mortality",
+    y = "Income"
+  ) +
+  theme_minimal()
 
 # Compare linear vs quadratic model
 linear_model <- lm(income ~ child_mort, data = data)
 summary(linear_model)
 summary(poly2_model)
+summary(poly2_model_log) 
 # also here the adj r^2 of the polynomial model is better than the linear one 
 # 0.380 vs 0.270
 
-
-# residual analysis also on this:
-
-# Residuals and fitted (predicted) values
-res  <- residuals(poly2_model)
-fit  <- fitted(poly2_model)
-
-# Standardized and studentized residuals
-std_res   <- rstandard(poly2_model)
-stud_res  <- rstudent(poly2_model)
-
-df_res <- data.frame(
-  Fitted    = fit,
-  Residuals = res,
-  AbsRes    = abs(res)
-)
-
-ggplot(df_res, aes(x = Fitted, y = Residuals, color = AbsRes)) +
-  geom_point(alpha = 0.7, size = 2) +
-  scale_color_viridis(option = "plasma", name = "|Residual|") +
-  geom_smooth(method = "loess", se = FALSE, color = "black", size = 0.8) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-  labs(
-    title    = "Residuals vs Fitted (Quadratic Model)",
-    subtitle = "Points colored by magnitude of residuals",
-    x        = "Fitted values",
-    y        = "Residuals"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title    = element_text(face = "bold", size = 16),
-    plot.subtitle = element_text(size = 12, color = "grey40"),
-    legend.position = "right"
-  )
-
-qqnorm(std_res,
-       main = "Normal Q–Q Plot of Standardized Residuals")
-qqline(std_res, col = "red", lwd = 2)
-
-
-# Cook's distance and leverage
-
-#–– 1. Tidy data frame with diagnostics
-df_diag <- data %>%
-  mutate(
-    CooksD   = cooks.distance(poly2_model),
-    Leverage = hatvalues(poly2_model),
-    Obs      = row_number()
-  ) %>%
-  select(Obs, country, CooksD, Leverage)
-
-#–– Thresholds
-n  <- nrow(df_diag)
-p  <- length(coef(poly2_model))
-cd_thresh  <- 4 / (n - p)
-lev_thresh <- 2 * mean(df_diag$Leverage)
-
-#–– 2a. Cook’s Distance plot
-p_cd <- ggplot(df_diag, aes(x = Obs, y = CooksD)) +
-  geom_col(aes(fill = CooksD > cd_thresh), show.legend = FALSE) +
-  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
-  geom_hline(yintercept = cd_thresh, linetype = "dashed", color = "gray40") +
-  labs(
-    title = "Cook's Distance by Observation",
-    subtitle = sprintf("Red bars exceed threshold = %.3f", cd_thresh),
-    x = "Observation #",
-    y = "Cook's D"
-  ) +
-  theme_minimal(base_size = 14)
-
-#–– 2b. Leverage plot
-p_lev <- ggplot(df_diag, aes(x = Obs, y = Leverage)) +
-  geom_col(aes(fill = Leverage > lev_thresh), show.legend = FALSE) +
-  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
-  geom_hline(yintercept = lev_thresh, linetype = "dashed", color = "gray40") +
-  labs(
-    title = "Leverage (Hat Values) by Observation",
-    subtitle = sprintf("Red bars exceed threshold = %.3f", lev_thresh),
-    x = "Observation #",
-    y = "Leverage"
-  ) +
-  theme_minimal(base_size = 14)
-
-#–– Display them side by side
-
-grid.arrange(p_cd, p_lev, ncol = 1)
-
-# which obervations exceed the threshold?
-# Cook's D
-high_cd <- df_diag %>%
-  filter(CooksD > cd_thresh) %>%
-  arrange(desc(CooksD))
-
-# Leverage
-high_lev <- df_diag %>%
-  filter(Leverage > lev_thresh) %>%
-  arrange(desc(Leverage))
-
-# Print them
-cat("Observations with high Cook's D:\n")
-print(high_cd %>% select(Obs, country, CooksD))
-
-cat("\nObservations with high Leverage:\n")
-print(high_lev %>% select(Obs, country, Leverage))
-
-# Overall this is a good model, but we have some outliers and high leverage points
 
 
 # Let's do the PCA on the scaled log data now:
@@ -636,7 +467,7 @@ pca.data.summary <- data.frame(  # creates a dataframe where each row is a sampl
   row.names = NULL # row names are set to NULL to avoid confusion
 )
 
-# Create a data frame summarizing feature loadings on the first 3 principal components
+# Create a data frame summarizing feature loadings on the first 4 principal components
 pca.loadings <- data.frame(
   variable = names(data_log), # loadings tell you how much each original feature
   X = pca_result$rotation[,1],   # contributed to each PC. 
@@ -659,131 +490,312 @@ circle <- data.frame( # create a circle for the biplot
   y = sin(seq(0, 2 * pi, length.out = 1000))
 )
 
-# PC1 VS PC2
+
+# PC1 vs PC2
 biplot_pc1v2 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = X, y = Y), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = X, yend = Y), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = X, y = Y, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC1 - ', pca_var_per[1], '%', sep = '')) +
-  ylab(paste('PC2 - ', pca_var_per[2], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = X, y = Y), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = X, yend = Y), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = X, y = Y, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC1 – ", pca_var_per[1], "%")) +
+  ylab(paste0("PC2 – ", pca_var_per[2], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC1 vs PC2)')
+  ggtitle("PCA Biplot (PC1 vs PC2)")
 
-# PC2 VS PC3
+# PC2 vs PC3
 biplot_pc2v3 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = Y, y = Z), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = Y, yend = Z), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = Y, y = Z, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC2 - ', pca_var_per[2], '%', sep = '')) +
-  ylab(paste('PC3 - ', pca_var_per[3], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = Y, y = Z), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = Y, yend = Z), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = Y, y = Z, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC2 – ", pca_var_per[2], "%")) +
+  ylab(paste0("PC3 – ", pca_var_per[3], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC2 vs PC3)')
+  ggtitle("PCA Biplot (PC2 vs PC3)")
 
-# PC1 VS PC3
+# PC1 vs PC3
 biplot_pc1v3 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = X, y = Z), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = X, yend = Z), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = X, y = Z, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC1 - ', pca_var_per[1], '%', sep = '')) +
-  ylab(paste('PC3 - ', pca_var_per[3], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = X, y = Z), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = X, yend = Z), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = X, y = Z, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC1 – ", pca_var_per[1], "%")) +
+  ylab(paste0("PC3 – ", pca_var_per[3], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC1 vs PC3)')
+  ggtitle("PCA Biplot (PC1 vs PC3)")
 
 # PC1 vs PC4
 biplot_pc1v4 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = X, y = W), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = X, yend = W), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = X, y = W, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC1 - ', pca_var_per[1], '%', sep = '')) +
-  ylab(paste('PC4 - ', pca_var_per[4], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = X, y = W), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = X, yend = W), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = X, y = W, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC1 – ", pca_var_per[1], "%")) +
+  ylab(paste0("PC4 – ", pca_var_per[4], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC1 vs PC4)')
+  ggtitle("PCA Biplot (PC1 vs PC4)")
 
 # PC2 vs PC4
 biplot_pc2v4 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = Y, y = W), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = Y, yend = W), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = Y, y = W, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC2 - ', pca_var_per[2], '%', sep = '')) +
-  ylab(paste('PC4 - ', pca_var_per[4], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = Y, y = W), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = Y, yend = W), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = Y, y = W, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC2 – ", pca_var_per[2], "%")) +
+  ylab(paste0("PC4 – ", pca_var_per[4], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC2 vs PC4)')
+  ggtitle("PCA Biplot (PC2 vs PC4)")
 
 # PC3 vs PC4
 biplot_pc3v4 <- ggplot() +
-  geom_point(data = pca.data.summary, aes(x = Z, y = W), color = 'lightblue', alpha = 0.6) +  
-  geom_segment(data = pca.loadings, aes(x = 0, y = 0, xend = Z, yend = W), 
-               arrow = arrow(length = unit(0.2, 'cm')), color = '#D22B2B') +
-  geom_text(data = pca.loadings, aes(x = Z, y = W, label = variable), 
-            size = 3.5, color = '#D22B2B', vjust = 1.5) +  
-  geom_path(data = circle, aes(x = x, y = y), color = 'lightblue', linetype = 'dashed') +
-  xlab(paste('PC3 - ', pca_var_per[3], '%', sep = '')) +
-  ylab(paste('PC4 - ', pca_var_per[4], '%', sep = '')) +
-  xlim(-1, 1) + ylim(-1, 1) +  
+  geom_point(data = pca.data.summary, 
+             aes(x = Z, y = W), 
+             color = "lightblue", alpha = 0.6) +
+  geom_segment(data = pca.loadings, 
+               aes(x = 0, y = 0, xend = Z, yend = W), 
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "#D22B2B") +
+  geom_text_repel(data = pca.loadings,
+                  aes(x = Z, y = W, label = variable),
+                  size          = 3.5,
+                  color         = "#D22B2B",
+                  box.padding   = 0.2,
+                  point.padding = 0.3,
+                  segment.size  = 0.3,
+                  segment.color = "grey50",
+                  max.overlaps  = Inf) +
+  geom_path(data = circle, aes(x = x, y = y), 
+            color = "lightblue", linetype = "dashed") +
+  xlab(paste0("PC3 – ", pca_var_per[3], "%")) +
+  ylab(paste0("PC4 – ", pca_var_per[4], "%")) +
+  xlim(-1, 1) + ylim(-1, 1) +
   coord_fixed() +
   theme_bw() +
-  ggtitle('PCA Biplot (PC3 vs PC4)')
+  ggtitle("PCA Biplot (PC3 vs PC4)")
 
-grid.arrange(biplot_pc1v2, biplot_pc2v3, biplot_pc1v3,biplot_pc1v4,biplot_pc2v4,biplot_pc3v4, ncol = 3)
+grid.arrange(biplot_pc1v2, biplot_pc1v3, ncol = 2)
+grid.arrange(biplot_pc1v4,biplot_pc2v3, ncol = 2)
+grid.arrange(biplot_pc2v4,biplot_pc3v4, ncol = 2)
 
-# PCA 3D plot (PC 1,2,3)
-pca_result_scaled <- pca_result$x / max(abs(pca_result$x))
-pca.loadings.scaled <- pca_result$rotation / max(abs(pca_result$rotation))
+# How to interpret loadings: notion unsup/loadings
 
-pca_result_plot_threeD <- plot_ly() %>%
-  add_trace(x = pca_result_scaled[,1], 
-            y = pca_result_scaled[,2], 
-            z = pca_result_scaled[,3], 
-            type = 'scatter3d', mode = 'markers',
-            marker = list(color = 'lightblue', size = 3),
-            name = 'Samples') %>%
-  add_trace(x = rep(0, nrow(pca.loadings.scaled)), 
-            y = rep(0, nrow(pca.loadings.scaled)), 
-            z = rep(0, nrow(pca.loadings.scaled)),
-            xend = pca.loadings.scaled[,1], 
-            yend = pca.loadings.scaled[,2], 
-            zend = pca.loadings.scaled[,3], 
-            type = 'scatter3d', mode = 'lines',
-            line = list(color = '#D22B2B', width = 10),
-            name = 'PC Loadings') %>%
-  add_trace(x = pca.loadings.scaled[,1], 
-            y = pca.loadings.scaled[,2], 
-            z = pca.loadings.scaled[,3], 
-            type = 'scatter3d', mode = 'text',
-            text = rownames(pca_result$rotation),
-            textposition = 'top center',
-            textfont = list(color = '#D22B2B', size = 12),
-            name = 'Variables') %>%
-  layout(title = '3D PCA Graph',
-         scene = list(xaxis = list(title = paste('PC1 - ', pca_var_per[1], '%')),
-                      yaxis = list(title = paste('PC2 - ', pca_var_per[2], '%')),
-                      zaxis = list(title = paste('PC3 - ', pca_var_per[3], '%'))))
-pca_result_plot_threeD
+# The fact that the first component explains more than half of the variance and that
+# it is mostly influence by child_mort, income , life expect, total_fer and gdpp, suggests that 
+# these variables are the most important in determining the differences between countries.
 
+
+# Now run clustering on the both the data_scaled_log and the PCA scores
+wss <- function(x, k) {
+  km <- kmeans(x, centers = k, nstart = 25)
+  km$tot.withinss
+}
+
+# Try K = 1..10
+ks <- 1:10
+wss_vals <- sapply(ks, function(k) wss(data_scaled_log, k))
+
+plot(ks, wss_vals, type="b",
+     xlab="Number of clusters K",
+     ylab="Total within‐cluster SS",
+     main="Elbow method for data_scaled_log")
+
+pc_scores <- as.data.frame(pca_result$x[, 1:4])  # pick top 4 PCs
+
+wss_pca <- sapply(ks, function(k) wss(pc_scores, k))
+lines(ks, wss_pca, type="b", col="blue", lty=2)
+legend("topright", legend=c("raw","PCA"), col=c("black","blue"), lty=1:2)
+
+
+set.seed(123)    # for reproducibility
+
+# 2a) on the scaled+logged data
+k <- 3
+km_raw <- kmeans(data_scaled_log, centers = k, nstart = 25)
+table(km_raw$cluster)
+
+# 2b) on the PCA‐reduced data
+km_pca <- kmeans(pc_scores, centers = k, nstart = 25)
+table(km_pca$cluster)
+
+
+# add the assignments back to your original data‐frame
+df <- data.frame(data$country, data_scaled_log,
+                 cluster_raw = factor(km_raw$cluster), # 
+                 cluster_pca = factor(km_pca$cluster))
+colnames(df)[1] <- "country" # rename the first column to "country"
+
+# visualize on PC1 vs PC2
+ggplot(df, aes(x = pca_result$x[,1], y = pca_result$x[,2], color = cluster_raw)) +
+  geom_point(alpha=0.7) + ggtitle("Clusters on raw data")
+
+ggplot(df, aes(x = pca_result$x[,1], y = pca_result$x[,2], color = cluster_pca)) +
+  geom_point(alpha=0.7) + ggtitle("Clusters on PCA data")
+
+
+# 1) Add PC1/PC2 columns to your df
+df <- df %>%
+  mutate(
+    PC1 = pca_result$x[,1],
+    PC2 = pca_result$x[,2]
+  )
+
+# 2) Pull out % variance explained for each axis
+var_per <- round(100 * pca_result$sdev^2 / sum(pca_result$sdev^2), 1)
+xlab <- paste0("PC1 (", var_per[1], "%)")
+ylab <- paste0("PC2 (", var_per[2], "%)")
+
+# 3) Compute centroids
+centroids_raw <- df %>%
+  group_by(cluster_raw) %>%
+  summarize(PC1 = mean(PC1), PC2 = mean(PC2))
+
+centroids_pca <- df %>%
+  group_by(cluster_pca) %>%
+  summarize(PC1 = mean(PC1), PC2 = mean(PC2))
+
+# 4) Build panel function
+make_panel <- function(cluster_col, centroids, title, pal) {
+  ggplot(df, aes(x = PC1, y = PC2, color = .data[[cluster_col]])) +
+    geom_point(alpha = 0.8, size = 2) +
+    stat_ellipse(aes(fill = .data[[cluster_col]]),
+                 type = "norm", level = 0.68, alpha = 0.2, show.legend = FALSE) +
+    geom_point(data = centroids, aes(x = PC1, y = PC2),
+               shape = 4, size = 4, stroke = 2) +
+    geom_text_repel(data = centroids,
+                    aes(x = PC1, y = PC2, label = .data[[cluster_col]]),
+                    size = 4, color = "black") +
+    scale_color_brewer(palette = pal) +
+    labs(title = title, x = xlab, y = ylab, color = "Cluster") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+
+# 5) Create the two panels
+p_raw <- make_panel(
+  cluster_col = "cluster_raw",
+  centroids  = centroids_raw,
+  title      = "Clusters on raw data",
+  pal        = "Set1"
+)
+
+p_pca <- make_panel(
+  cluster_col = "cluster_pca",
+  centroids  = centroids_pca,
+  title      = "Clusters on PCA data",
+  pal        = "Set2"
+)
+
+# 6) Combine them with a shared legend
+p_raw + p_pca + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+
+
+
+
+# 1) grab world polygons (as an sf object)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# 2) make sure your df has ISO3 codes named "iso_a3"
+df$iso_a3 <- countrycode(df$country, origin = "country.name", destination = "iso3c")
+
+
+# 3) join cluster labels onto the map
+world_clust <- world %>% 
+  left_join(df, by = c("iso_a3"))
+
+# 4) plot it!
+ggplot(world_clust) +
+  geom_sf(aes(fill = cluster_raw), color = "grey80", size = 0.1) +
+  scale_fill_brewer(palette = "Set1", na.value = "white", name = "Cluster") +
+  labs(title = "World Map of Countries by K‐means Cluster",
+       subtitle = "Clusters computed on raw (scaled+logged) data") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_line(color = "transparent"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
 
 
