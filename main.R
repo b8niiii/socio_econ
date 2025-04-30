@@ -1,13 +1,13 @@
-''' https://www.kaggle.com/datasets/rohan0301/unsupervised-learning-on-country-data
+# https://www.kaggle.com/datasets/rohan0301/unsupervised-learning-on-country-data
 
-Problem Statement:
-  HELP International have been able to raise around $ 10 million. 
-Now the CEO of the NGO needs to decide how to use this money strategically 
-and effectively. So, CEO has to make decision to choose the countries that are 
-in the direst need of aid. Hence, your Job as a Data scientist is to categorise
-the countries using some socio-economic and health factors that determine the 
-overall development of the country. Then you need to suggest the countries 
-which the CEO needs to focus on the most. '''
+# Problem Statement: year is 2010
+#  HELP International have been able to raise around $ 10 million. 
+# Now the CEO of the NGO needs to decide how to use this money strategically 
+# and effectively. So, CEO has to make decision to choose the countries that are 
+# in the direst need of aid. Hence, your Job as a Data scientist is to categorize
+# the countries using some socio-economic and health factors that determine the 
+# overall development of the country. Then you need to suggest the countries 
+# which the CEO needs to focus on the most. '''
 
 
 library(corrplot)
@@ -19,6 +19,8 @@ library(dplyr)
 library(plotly)
 library(glmnet) # for ridge regression
 library(reshape2) # for reshaping the data easily
+library(viridis) # for color palettes
+library(tidyr)
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
@@ -121,7 +123,7 @@ shapiro_df_log
 data_log <- as.data.frame(data_log) # Convert the list of log-transformed data back to a data frame
 data_log <- na.omit(data_log) # Drop rows with NA values
 par(mfrow=c(3, 3), mar=c(2, 2, 2, 2), oma=c(0, 0, 3, 0)) # 3 rows, 3 columns
-for(i in 2:9) {
+for(i in 1:9) {
   hist(data_log[,i], 
           main = names(data)[i], 
           col = "lightblue")}
@@ -129,7 +131,7 @@ mtext("Log Variables Histograms", outer=TRUE, cex=1.0, font=2)
 
 
 par(mfrow=c(3, 3), mar=c(2, 2, 2, 2), oma=c(0, 0, 3, 0)) # 3 rows, 3 columns
-for(i in 2:9) {
+for(i in 1:9) {
   boxplot(data_log[,i], 
        main = names(data)[i], 
        col = "lightblue")}
@@ -143,9 +145,6 @@ corrplot(correlational_matrix,
          tl.col = "black")
 
 # WITH THIS PLOT WE CAN SEE HOW CHILD MORTALITY IS STRONGLY CORRELATED WITH OTHER VARIABLES
-# AND IN GENERAL HOW THERE WERE NONLINEAR CORRELATION NOT SEEN BY THE CORRELATION MATRIX WITH 
-# NORMAL VARIABLES AND THE VIF, BUT EASILY SPOTTED WITH THE CORRELATION MATRIX AND THE VIF
-# ON LOGARITHMIC VARIABLES, CAUSE THESE RELATIONS ARE NOT LINEAR AND THE LOG LINEARIZES THEM
 
 
 cor_matrix <- cor(data_log[,1:9], use = "pairwise.complete.obs")  # Check correlation matrix
@@ -202,12 +201,15 @@ vif_df <- data.frame(
 # View results
 print(vif_df)
 
-#Redundancy analysis on original variables did not find redundant features because 
+
 #relationships were nonlinear. After log transformation, "income" and "child mortality" 
 #became linearly predictable from other variables. This shows that the log transformation 
 #revealed hidden dependencies that were not detectable before.
 
 
+
+
+# Redundancy analysis on original variables did not find redundant features 
 # redundancy analysis on original data
 redun_result <- redun(~ ., data = data[2:10], nk = 0) 
 print(redun_result)
@@ -217,9 +219,14 @@ print(redun_result)
 redun_result <- redun(~ ., data = data_log, nk = 0) 
 print(redun_result)
 
+#A GENERAL INSIGHT IS THAT "income", "child mortality" and "gdpp" WERE NONLINEARLY CORRELATED WITH OTHER VARIABLES 
+# WE KNOW THIS CAUSE THE RELATION WASN'T SPOTTED ON NORMAL VARIABLES BY THE VIF, BUT EASILY SPOTTED WITH THE CORRELATION 
+# MATRIX AND THE VIF ON LOGARITHMIC VARIABLES, CAUSE THESE RELATIONS ARE NOT LINEAR AND THE LOG LINEARIZES THEM
+
+
+
 # LET'S TRY TO GET A LIL BIT DEEPER INTO THE CORRELATIONS AMONG INCOME, GDPP AND CHILD MORT
-# WE SPOTTED THOSE PROBLEMATIC VARIABLES DOING THE CORRELATION MATRIX AND ANALYZING WITH
-# THE VIF AND THE REDUNDANCY ANALYSIS.
+# WE SPOTTED THOSE PROBLEMATIC VARIABLES DOING THE CORRELATION MATRIX 
 
 # standardize data
 
@@ -277,9 +284,9 @@ ggplot(data, aes(x = gdpp, y = income)) +
   ) +
   theme_minimal()
 
-# not satisfied with the power law fit, let's try to fit a polynomial regression
+# not satisfied with the power law fit, let's try to fit a polynomial regression on log data
 # Fit quadratic model
-poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data)
+poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data_log)
 
 # Plot
 ggplot(data, aes(x = gdpp, y = income)) +
@@ -294,12 +301,121 @@ ggplot(data, aes(x = gdpp, y = income)) +
 
 # now to officially say that these two are not linearly correlated, I will run a linear model
 # and compare the adjusted R^2:
-linear_model <- lm(income ~ gdpp, data = data)
+linear_model <- lm(income ~ gdpp, data = data_log)
 summary(linear_model)
 summary(poly2_model)
 
 # matter of facts, the adj R^2 of the polynomial model is 0.8194 and is better than the linear 
 # one of 0.8008 and the RSE is lower on the polynomial (8193 compared to 8603)
+
+# Now, before doing the same analysis but with child_mort instead of "GDP per capita", let's do
+# the residual analysis. You can find further details on notion: progettoSL/unsup/resid_poly
+
+
+# Residuals and fitted (predicted) values
+res  <- residuals(poly2_model)
+fit  <- fitted(poly2_model)
+
+# Standardized and studentized residuals
+std_res   <- rstandard(poly2_model)
+stud_res  <- rstudent(poly2_model)
+
+df_res <- data.frame(
+  Fitted    = fit,
+  Residuals = res,
+  AbsRes    = abs(res)
+)
+
+ggplot(df_res, aes(x = Fitted, y = Residuals, color = AbsRes)) +
+  geom_point(alpha = 0.7, size = 2) +
+  scale_color_viridis(option = "plasma", name = "|Residual|") +
+  geom_smooth(method = "loess", se = FALSE, color = "black", size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title    = "Residuals vs Fitted (Quadratic Model)",
+    subtitle = "Points colored by magnitude of residuals",
+    x        = "Fitted values",
+    y        = "Residuals"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    legend.position = "right"
+  )
+
+qqnorm(std_res,
+       main = "Normal Q–Q Plot of Standardized Residuals")
+qqline(std_res, col = "red", lwd = 2)
+
+
+# Cook's distance and leverage
+
+#–– 1. Tidy data frame with diagnostics
+df_diag <- data %>%
+  mutate(
+    CooksD   = cooks.distance(poly2_model),
+    Leverage = hatvalues(poly2_model),
+    Obs      = row_number()
+  ) %>%
+  select(Obs, country, CooksD, Leverage)
+
+#–– Thresholds
+n  <- nrow(df_diag)
+p  <- length(coef(poly2_model))
+cd_thresh  <- 4 / (n - p)
+lev_thresh <- 2 * mean(df_diag$Leverage)
+
+#–– 2a. Cook’s Distance plot
+p_cd <- ggplot(df_diag, aes(x = Obs, y = CooksD)) +
+  geom_col(aes(fill = CooksD > cd_thresh), show.legend = FALSE) +
+  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
+  geom_hline(yintercept = cd_thresh, linetype = "dashed", color = "gray40") +
+  labs(
+    title = "Cook's Distance by Observation",
+    subtitle = sprintf("Red bars exceed threshold = %.3f", cd_thresh),
+    x = "Observation #",
+    y = "Cook's D"
+  ) +
+  theme_minimal(base_size = 14)
+
+#–– 2b. Leverage plot
+p_lev <- ggplot(df_diag, aes(x = Obs, y = Leverage)) +
+  geom_col(aes(fill = Leverage > lev_thresh), show.legend = FALSE) +
+  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
+  geom_hline(yintercept = lev_thresh, linetype = "dashed", color = "gray40") +
+  labs(
+    title = "Leverage (Hat Values) by Observation",
+    subtitle = sprintf("Red bars exceed threshold = %.3f", lev_thresh),
+    x = "Observation #",
+    y = "Leverage"
+  ) +
+  theme_minimal(base_size = 14)
+
+#–– Display them side by side
+
+grid.arrange(p_cd, p_lev, ncol = 1)
+
+# which obervations exceed the threshold?
+# Cook's D
+high_cd <- df_diag %>%
+  filter(CooksD > cd_thresh) %>%
+  arrange(desc(CooksD))
+
+# Leverage
+high_lev <- df_diag %>%
+  filter(Leverage > lev_thresh) %>%
+  arrange(desc(Leverage))
+
+# Print them
+cat("Observations with high Cook's D:\n")
+print(high_cd %>% select(Obs, country, CooksD))
+
+cat("\nObservations with high Leverage:\n")
+print(high_lev %>% select(Obs, country, Leverage))
+
+# Overall this is a good model, but we have some outliers and high leverage points
+
 
 # same with child_mort
 
@@ -354,6 +470,113 @@ summary(linear_model)
 summary(poly2_model)
 # also here the adj r^2 of the polynomial model is better than the linear one 
 # 0.380 vs 0.270
+
+
+# residual analysis also on this:
+
+# Residuals and fitted (predicted) values
+res  <- residuals(poly2_model)
+fit  <- fitted(poly2_model)
+
+# Standardized and studentized residuals
+std_res   <- rstandard(poly2_model)
+stud_res  <- rstudent(poly2_model)
+
+df_res <- data.frame(
+  Fitted    = fit,
+  Residuals = res,
+  AbsRes    = abs(res)
+)
+
+ggplot(df_res, aes(x = Fitted, y = Residuals, color = AbsRes)) +
+  geom_point(alpha = 0.7, size = 2) +
+  scale_color_viridis(option = "plasma", name = "|Residual|") +
+  geom_smooth(method = "loess", se = FALSE, color = "black", size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title    = "Residuals vs Fitted (Quadratic Model)",
+    subtitle = "Points colored by magnitude of residuals",
+    x        = "Fitted values",
+    y        = "Residuals"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "grey40"),
+    legend.position = "right"
+  )
+
+qqnorm(std_res,
+       main = "Normal Q–Q Plot of Standardized Residuals")
+qqline(std_res, col = "red", lwd = 2)
+
+
+# Cook's distance and leverage
+
+#–– 1. Tidy data frame with diagnostics
+df_diag <- data %>%
+  mutate(
+    CooksD   = cooks.distance(poly2_model),
+    Leverage = hatvalues(poly2_model),
+    Obs      = row_number()
+  ) %>%
+  select(Obs, country, CooksD, Leverage)
+
+#–– Thresholds
+n  <- nrow(df_diag)
+p  <- length(coef(poly2_model))
+cd_thresh  <- 4 / (n - p)
+lev_thresh <- 2 * mean(df_diag$Leverage)
+
+#–– 2a. Cook’s Distance plot
+p_cd <- ggplot(df_diag, aes(x = Obs, y = CooksD)) +
+  geom_col(aes(fill = CooksD > cd_thresh), show.legend = FALSE) +
+  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
+  geom_hline(yintercept = cd_thresh, linetype = "dashed", color = "gray40") +
+  labs(
+    title = "Cook's Distance by Observation",
+    subtitle = sprintf("Red bars exceed threshold = %.3f", cd_thresh),
+    x = "Observation #",
+    y = "Cook's D"
+  ) +
+  theme_minimal(base_size = 14)
+
+#–– 2b. Leverage plot
+p_lev <- ggplot(df_diag, aes(x = Obs, y = Leverage)) +
+  geom_col(aes(fill = Leverage > lev_thresh), show.legend = FALSE) +
+  scale_fill_manual(values = c(`TRUE` = "firebrick", `FALSE` = "steelblue")) +
+  geom_hline(yintercept = lev_thresh, linetype = "dashed", color = "gray40") +
+  labs(
+    title = "Leverage (Hat Values) by Observation",
+    subtitle = sprintf("Red bars exceed threshold = %.3f", lev_thresh),
+    x = "Observation #",
+    y = "Leverage"
+  ) +
+  theme_minimal(base_size = 14)
+
+#–– Display them side by side
+
+grid.arrange(p_cd, p_lev, ncol = 1)
+
+# which obervations exceed the threshold?
+# Cook's D
+high_cd <- df_diag %>%
+  filter(CooksD > cd_thresh) %>%
+  arrange(desc(CooksD))
+
+# Leverage
+high_lev <- df_diag %>%
+  filter(Leverage > lev_thresh) %>%
+  arrange(desc(Leverage))
+
+# Print them
+cat("Observations with high Cook's D:\n")
+print(high_cd %>% select(Obs, country, CooksD))
+
+cat("\nObservations with high Leverage:\n")
+print(high_lev %>% select(Obs, country, Leverage))
+
+# Overall this is a good model, but we have some outliers and high leverage points
 
 
 # Let's do the PCA on the scaled log data now:
