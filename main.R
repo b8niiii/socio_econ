@@ -825,3 +825,165 @@ ggplot(world_clust) +
 
 # Check roadmap on notion/sl/sup
 
+# To start the supervised part we need a target variable. At this link:
+# "https://openwashdata.github.io/worldhdi/index.html" I found a dataset
+# returning the Human Development Index, by the United Nations.
+
+hdi <- read.csv("data/hdi.csv")
+hdi <- hdi %>%
+  select(hdi_2010, iso3c)
+# Now we should add the iso to our datasets, so that we can merge the happiness index:
+data$iso_a3 <- countrycode(data$country, origin = "country.name", destination = "iso3c")
+
+# Left join the happiness index to the data
+data <- data %>%
+  left_join(
+   hdi, # rename the column to "hdi"
+  by = c("iso_a3" = "iso3c")
+  )
+# count NAs number of happiness column:
+sum(is.na(data$hdi_2010)) # 0 NAs
+
+data_log <- data %>% # create data_log and add 5 to avoid NAs
+  select(-iso_a3, -country) %>%
+  mutate(across(everything(), ~ log(.x + 5)))
+
+
+# let's reorder our datasets columns:
+new_order <- c("country" , "iso_a3", "child_mort", "exports",  "health",    
+"imports",  "income","inflation" ,"life_expec","total_fer", "gdpp", "hdi_2010" )
+
+data <- data %>% select(all_of(new_order))
+data_log$country <- data$country
+data_log$iso_a3 <- data$iso_a3
+data <- data %>% select(all_of(new_order))
+data_log <- data_log %>% select(all_of(new_order))
+
+# Now EDA on the dependent variable, HDI:
+
+
+# Raw HDI
+summary(data$hdi_2010)
+sd(data$hdi_2010)
+IQR(data$hdi_2010)
+
+# Logged HDI
+summary(data_log$hdi_2010)
+sd(data_log$hdi_2010)
+IQR(data_log$hdi_2010)
+
+
+# Raw HDI
+p1 <- ggplot(data, aes(x = hdi_2010)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Histogram of HDI", x = "HDI", y = "Count") +
+  theme_minimal()
+
+# Logged HDI
+p2 <- ggplot(data_log, aes(x = hdi_2010)) +
+  geom_histogram(bins = 30, fill = "darkorange", color = "white") +
+  labs(title = "Histogram of Logged HDI", x = "log(HDI + constant)", y = "Count") +
+  theme_minimal()
+
+# density plots
+
+# Raw HDI
+p3 <- ggplot(data, aes(x = hdi_2010)) +
+  geom_density(fill = "skyblue", alpha = 0.5) +
+  labs(title = "Density Plot of HDI", x = "HDI") +
+  theme_minimal()
+
+# Logged HDI
+p4 <- ggplot(data_log, aes(x = hdi_2010)) +
+  geom_density(fill = "tomato", alpha = 0.5) +
+  labs(title = "Density Plot of Logged HDI", x = "log(HDI + constant)") +
+  theme_minimal()
+
+# Box PLots
+
+# Raw HDI
+p5 <- ggplot(data, aes(y = hdi_2010)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Boxplot of HDI") +
+  theme_minimal()
+
+# Logged HDI
+p6 <- ggplot(data_log, aes(y = hdi_2010)) +
+  geom_boxplot(fill = "salmon") +
+  labs(title = "Boxplot of Logged HDI") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4,p5, p6, ncol = 2)
+
+
+# Now let's do the Shapiro-Wilk test for normality
+
+
+# Original
+shapiro.test(data$hdi_2010)
+
+# Logged
+shapiro.test(data_log$hdi_2010)
+
+# Both test reject hypothesis of normality
+
+# QQ-plot HDI raw
+qqnorm(data$hdi_2010); qqline(data$hdi_2010, col = "red")
+
+# QQ-plot HDI log
+qqnorm(data_log$hdi_2010); qqline(data_log$hdi_2010, col = "blue")
+
+
+# The QQ plor shows some normality whereas the Shapiro Wilk does not. 
+# We will tacke both the approach of using robust methods that do not
+# require normality and the approach of models like linear regression
+# that do not actually require normlity on the tatget variable, but on the residuals.
+
+# Our goal is to understand the most influencial variables on the hdi,
+# check sl/sup/variable_importance for more details
+
+
+# Let's start with the linear regression
+
+# Linear regression on the original data
+
+lm_model <- lm(hdi_2010 ~ ., data = data[3:12])
+summary(lm_model)
+ 
+# plot residuals
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 4, 0))  # Larger top outer margin
+
+# Plot diagnostics with base R (includes leverage plot)
+plot(lm_model, which = 1:4, col = "blue", pch = 19, cex = 0.7,sub.caption = "")
+
+# Add a global title, slightly lower than default to avoid overlap
+mtext("Diagnostic Plots for Linear Model", outer = TRUE, cex = 1.4, font = 2, line = 1)
+
+
+# the scale-location suggest slight heteroskedasticity, but doesn't seem anything concerning
+# the Cook's distance suggests that the following:
+data[c(67, 92, 124), ]
+# are influential observations
+#
+#
+# same regression and residual analysis but with the logged data
+#
+#
+
+lm_model <- lm(hdi_2010 ~ ., data = data_log[3:12])
+summary(lm_model)
+
+# plot residuals
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 4, 0))  # Larger top outer margin
+
+# Plot diagnostics with base R (includes leverage plot)
+plot(lm_model, which = 1:4, col = "blue", pch = 19, cex = 0.7,sub.caption = "")
+
+# Add a global title, slightly lower than default to avoid overlap
+mtext("Diagnostic Plots for Linear Model", outer = TRUE, cex = 1.4, font = 2, line = 1)
+
+# the scale-location suggest slight heteroskedasticity, but doesn't seem anything concerning
+# the Cook's distance suggests that the following:
+data[c(67, 150, 155), ]
+# are influential observations
+
