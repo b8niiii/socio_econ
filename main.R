@@ -28,7 +28,7 @@ library(sf)
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(countrycode)
-
+library(scales)
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
@@ -129,7 +129,7 @@ shapiro_df_log
 # Even tho the logarithms of the variables turned out not to be normal, we can still plot the results
 # to see if they look at least more normal than before:
 data_log <- as.data.frame(data_log) # Convert the list of log-transformed data back to a data frame
-data_log <- na.omit(data_log) # Drop rows with NA values
+
 par(mfrow=c(3, 3), mar=c(2, 2, 2, 2), oma=c(0, 0, 3, 0)) # 3 rows, 3 columns
 for(i in 1:9) {
   hist(data_log[,i], 
@@ -226,6 +226,8 @@ print(redun_result)
 # redundancy analysis on log
 redun_result <- redun(~ ., data = data_log, nk = 0) 
 print(redun_result)
+# Income and child mortality are redundant with other variables
+
 
 #A GENERAL INSIGHT IS THAT "income", "child mortality" and "gdpp" WERE NONLINEARLY CORRELATED WITH OTHER VARIABLES 
 # WE KNOW THIS CAUSE THE RELATION WASN'T SPOTTED ON NORMAL VARIABLES BY THE VIF, BUT EASILY SPOTTED WITH THE CORRELATION 
@@ -234,11 +236,11 @@ print(redun_result)
 
 
 # LET'S TRY TO GET A LIL BIT DEEPER INTO THE CORRELATIONS AMONG INCOME, GDPP AND CHILD MORT
-# WE SPOTTED THOSE PROBLEMATIC VARIABLES DOING THE CORRELATION MATRIX 
+# WE SPOTTED THOSE PROBLEMATIC VARIABLES THROUGH THE CORRELATION MATRIX 
 
 
 # PLEASE NOTE: FOR CONSIDERATIONS ON THE DIFFERENCE BETWEEN INCOME AND GDP PER CAPITA, REFER TO
-# notion page UNSUP/INCOME vs GDPP
+# notion page sl/UNSUP/INCOME vs GDPP
 
 
 # standardize data
@@ -257,13 +259,13 @@ print(redun_result_scaled)
 # Simple scatter plot
 ggplot(data_scaled_log, aes(x = gdpp, y = income)) +
   geom_point(color = 'blue', alpha = 0.6) +
-  labs(title = "Income vs GDP per capita", x = "GDP per capita", y = "Income") +
+  labs(title = "Income vs GDP per capita", x = "Log GDP per capita standardized", y = "Log Income standardized") +
   theme_minimal()
 
 ggplot(data_scaled_log, aes(x = gdpp, y = income)) +
   geom_point(color = 'blue', alpha = 0.6) +
   geom_smooth(method = "lm", color = 'red') +
-  labs(title = "Log-Log Relationship", x = "log(GDP per capita)", y = "log(Income)") +
+  labs(title = "Log-Log Relationship", x = "log(GDP per capita) standardized", y = "log(Income) standardized") +
   theme_minimal()
 # as we can see this log-log relation is very close to being perfectly linear:
 # so the original (unlogged) relationship between income and gdpp is a power law
@@ -286,7 +288,7 @@ summary(lm(income ~ gdpp, data = data_scaled_log))
 alpha <- 9.044e-16  # your intercept (very small)
 beta <- 0.972       # your slope
 
-# Then plot
+# Plot on original data
 ggplot(data, aes(x = gdpp, y = income)) +
   geom_point(color = 'blue', alpha = 0.6) +
   stat_function(fun = function(x) exp(alpha) * x^beta, color = 'red', size = 1.2) +
@@ -297,7 +299,7 @@ ggplot(data, aes(x = gdpp, y = income)) +
   ) +
   theme_minimal()
 
-# not satisfied with the power law fit, let's try to fit a polynomial regression on log data
+# not satisfied with the power law fit, let's try to fit a polynomial regression on original data
 # Fit quadratic model
 poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data)
 
@@ -352,7 +354,7 @@ ggplot(data_scaled_log, aes(x = child_mort, y = income)) +
 ggplot(data_scaled_log, aes(x = child_mort, y = income)) +
   geom_point(color = 'blue', alpha = 0.6) +
   geom_smooth(method = "lm", color = 'red') +
-  labs(title = "Log-Log Relationship", x = "log(Child Mortality)", y = "log(Income)") +
+  labs(title = "Log-Log Relationship", x = "log(Child Mortality) standardized", y = "log(Income) standardized") +
   theme_minimal()
 
 # Report the slope of the regression line
@@ -657,7 +659,7 @@ grid.arrange(biplot_pc1v2, biplot_pc1v3, ncol = 2)
 grid.arrange(biplot_pc1v4,biplot_pc2v3, ncol = 2)
 grid.arrange(biplot_pc2v4,biplot_pc3v4, ncol = 2)
 
-# How to interpret loadings: notion unsup/loadings
+# How to interpret loadings: notion sl/unsup/loadings
 
 # The fact that the first component explains more than half of the variance and that
 # it is mostly influence by child_mort, income , life expect, total_fer and gdpp, suggests that 
@@ -677,7 +679,7 @@ wss_vals <- sapply(ks, function(k) wss(data_scaled_log, k))
 plot(ks, wss_vals, type="b",
      xlab="Number of clusters K",
      ylab="Total within‐cluster SS",
-     main="Elbow method for data_scaled_log")
+     main="Elbow method for K-means clustering")
 
 pc_scores <- as.data.frame(pca_result$x[, 1:4])  # pick top 4 PCs
 
@@ -785,11 +787,17 @@ df$iso_a3 <- countrycode(df$country, origin = "country.name", destination = "iso
 world_clust <- world %>% 
   left_join(df, by = c("iso_a3"))
 
-# 4) plot it!
+
+
+# 4) Plot it 
 ggplot(world_clust) +
-  geom_sf(aes(fill = cluster_raw), color = "grey80", size = 0.1) +
-  scale_fill_brewer(palette = "Set1", na.value = "white", name = "Cluster") +
-  labs(title = "World Map of Countries by K‐means Cluster",
+  geom_sf(aes(fill = as.factor(cluster_raw)), color = "grey80", size = 0.1) +
+  scale_fill_manual(
+    values = c("1" = "green3", "2" = "blue", "3" = "red"),  # swap red and green
+    na.value = "white",
+    name = "Cluster"
+  ) +
+  labs(title = "World Map of Countries by K-means Cluster",
        subtitle = "Clusters computed on raw (scaled+logged) data") +
   theme_minimal() +
   theme(
@@ -798,4 +806,22 @@ ggplot(world_clust) +
     axis.ticks = element_blank()
   )
 
+#
+#
+#
+#
+#
+# Supervised learning
+#
+#
+#
+#
+#
+#
+# let's say I find an index telling how bad the quality of life is in a country. 
+# My goal would be to run several models to predict that value (in the whole dataset)
+# and then understand which variable influence the most this indicator so that I can 
+# then invest in the country with lowest vaues of that/those variables. 
+
+# Check roadmap on notion/sl/sup
 
