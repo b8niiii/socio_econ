@@ -34,6 +34,8 @@ library(broom) # for tidy() function
 library(tibble) # for rownames_to_column()
 library(rpart)         # recursive partitioning for regression trees
 library(rpart.plot)    # for nicer tree plots (optional)
+library(randomForest) # for random forests
+
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
@@ -947,7 +949,7 @@ qqnorm(data_log$hdi_2010); qqline(data_log$hdi_2010, col = "blue")
 # Our goal is to understand the most influential variables on the hdi,
 # check sl/sup/variable_importance for more details
 
-data_scaled <- as.data.frame(scale(data[3:10])) # scale the data to have mean = 0 and sd = 1
+data_scaled <- as.data.frame(scale(data[3:10])) # scale the data to have mean = 0 and sd = 1 and drop income and gdpp 
 # Let's start with the linear regression
 
 # Linear regression on the original data
@@ -976,7 +978,7 @@ data[c(67, 114, 152), ]
 # same regression and residual analysis but with the logged data
 #
 #
-data_log_scaled <- as.data.frame(scale(data_log[3:10]))
+data_log_scaled <- as.data.frame(scale(data_log[3:10])) # drop income and gdpp 
 
 lm_model <- lm(hdi_2010 ~ ., data = data_log_scaled) #exclude income and gdpp
 summary(lm_model)
@@ -1304,6 +1306,76 @@ ggplot(varimp_log, aes(x = reorder(variable, importance), y = importance)) +
     title = "Variable Importance (Pruned Tree, log data)",
     x     = "Variable",
     y     = "Relative Importance"
+  ) +
+  theme_minimal()
+
+
+# 1. Prepare the data (raw)
+df_raw <- data %>% select(-iso_a3, -country)
+
+# 2. (Optional) Tune mtry
+# tune <- tuneRF(
+#   x = df_raw %>% select(-hdi_2010),
+#   y = df_raw$hdi_2010,
+#   ntreeTry = 200,
+#   stepFactor = 1.5,
+#   improve = 0.01,
+#   trace = TRUE
+# )
+# best_mtry <- tune[which.min(tune[, “OOBError” ]), “mtry” ]
+
+# 3. Fit the Random Forest
+set.seed(42)
+rf_raw <- randomForest(
+  hdi_2010 ~ .,
+  data      = df_raw,
+  ntree     = 500,
+  mtry      = floor(ncol(df_raw)/3),  # or use best_mtry from above
+  importance = TRUE
+)
+
+# 4. Extract and plot importance
+varimp_raw <- as.data.frame(importance(rf_raw)) %>%
+  rownames_to_column("variable") %>%
+  rename(
+    IncMSE         = `%IncMSE`,
+    IncNodePurity  = `IncNodePurity`
+  ) %>%
+  arrange(desc(IncMSE))
+
+ggplot(varimp_raw, aes(x = reorder(variable, IncMSE), y = IncMSE)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Random Forest Variable Importance (raw data)",
+    x     = "Variable",
+    y     = "IncMSE"
+  ) +
+  theme_minimal()
+
+# 5. Repeat on log‐transformed data
+df_log <- data_log %>% select(-iso_a3, -country)
+set.seed(42)
+rf_log <- randomForest(
+  hdi_2010 ~ .,
+  data       = df_log,
+  ntree      = 500,
+  mtry       = floor(ncol(df_log)/3),
+  importance = TRUE
+)
+
+varimp_log <- as.data.frame(importance(rf_log)) %>%
+  rownames_to_column("variable") %>%
+  rename(IncMSE = `%IncMSE`) %>%
+  arrange(desc(IncMSE))
+
+ggplot(varimp_log, aes(x = reorder(variable, IncMSE), y = IncMSE)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Random Forest Variable Importance (logged data)",
+    x     = "Variable",
+    y     = "IncMSE"
   ) +
   theme_minimal()
 
