@@ -29,6 +29,11 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(countrycode)
 library(scales)
+library(glmnet)
+library(broom) # for tidy() function
+library(tibble) # for rownames_to_column()
+library(rpart)         # recursive partitioning for regression trees
+library(rpart.plot)    # for nicer tree plots (optional)
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
@@ -851,7 +856,7 @@ data_log <- data %>% # create data_log and add 5 to avoid NAs
 
 # let's reorder our datasets columns:
 new_order <- c("country" , "iso_a3", "child_mort", "exports",  "health",    
-"imports",  "income","inflation" ,"life_expec","total_fer", "gdpp", "hdi_2010" )
+"imports","inflation" ,"life_expec","total_fer", "hdi_2010",  "income", "gdpp" )
 
 data <- data %>% select(all_of(new_order))
 data_log$country <- data$country
@@ -934,21 +939,23 @@ qqnorm(data$hdi_2010); qqline(data$hdi_2010, col = "red")
 qqnorm(data_log$hdi_2010); qqline(data_log$hdi_2010, col = "blue")
 
 
-# The QQ plor shows some normality whereas the Shapiro Wilk does not. 
-# We will tacke both the approach of using robust methods that do not
+# The QQ plot shows some normality whereas the Shapiro Wilk does not. 
+# We will tackle both the approach of using robust methods that do not
 # require normality and the approach of models like linear regression
-# that do not actually require normlity on the tatget variable, but on the residuals.
+# that do not actually require normality on the target variable, but on the residuals.
 
-# Our goal is to understand the most influencial variables on the hdi,
+# Our goal is to understand the most influential variables on the hdi,
 # check sl/sup/variable_importance for more details
 
 
 # Let's start with the linear regression
 
 # Linear regression on the original data
+# We should first exclude the multicollinearity variables: income and gdpp
 
-lm_model <- lm(hdi_2010 ~ ., data = data[3:12])
-summary(lm_model)
+lm_model <- lm(hdi_2010 ~ ., data = data[3:10]) #until 10 to exclude 11: income and 12:gdpp
+summary(lm_model) # R uses the hdi_2010 inside data[3:10] as the target
+# The . operator means: "use all other columns in data[3:10] as predictors"
  
 # plot residuals
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 4, 0))  # Larger top outer margin
@@ -962,7 +969,7 @@ mtext("Diagnostic Plots for Linear Model", outer = TRUE, cex = 1.4, font = 2, li
 
 # the scale-location suggest slight heteroskedasticity, but doesn't seem anything concerning
 # the Cook's distance suggests that the following:
-data[c(67, 92, 124), ]
+data[c(67, 114, 152), ]
 # are influential observations
 #
 #
@@ -970,7 +977,7 @@ data[c(67, 92, 124), ]
 #
 #
 
-lm_model <- lm(hdi_2010 ~ ., data = data_log[3:12])
+lm_model <- lm(hdi_2010 ~ ., data = data_log[3:10]) #exclude income and gdpp
 summary(lm_model)
 
 # plot residuals
@@ -986,4 +993,316 @@ mtext("Diagnostic Plots for Linear Model", outer = TRUE, cex = 1.4, font = 2, li
 # the Cook's distance suggests that the following:
 data[c(67, 150, 155), ]
 # are influential observations
+
+
+# NOW LET'S GO WITH LASSO PREDICTION
+# Explicitly remove the target from the predictors
+#thorough explanation of the following code: notion/sl/sup/lasso_theory_recap/thorough_explanation
+
+# --- 1. Prepare data ---
+x_raw <- data %>%
+  select(-hdi_2010, -iso_a3, -country) %>%
+  as.matrix()
+
+y_raw <- data$hdi_2010
+
+# --- 2. Run LASSO with cross-validation ---
+cv_lasso_raw <- cv.glmnet(x_raw, y_raw, alpha = 1) # alpha = 1 for LASSO
+# Uses k-fold cross-validation (default is 10-fold) to select the best value 
+# of λ (lambda), the penalty parameter.
+
+
+# --- 3. Create tidy dataframe for ggplot of CV error ---
+lasso_plot_data <- data.frame(
+  lambda = cv_lasso_raw$lambda,
+  mse = cv_lasso_raw$cvm,
+  lower = cv_lasso_raw$cvlo,
+  upper = cv_lasso_raw$cvup
+) %>%
+  mutate(
+    label = case_when(
+      abs(lambda - cv_lasso_raw$lambda.min) < 1e-10 ~ "min", 
+      # `cv_lasso_raw$lambda.min`: the value of lambda that gives the 
+      # lowest mean squared error (MSE) in cross-validation.
+      
+      abs(lambda - cv_lasso_raw$lambda.1se) < 1e-10 ~ "1se",
+      TRUE ~ "none"
+      #`cv_lasso_raw$lambda.1se`: a more conservative lambda, 
+      # within 1 standard error of the best — often used for a simpler model.
+    )
+  )
+
+# --- 4. Plot cross-validation error ---
+ggplot(lasso_plot_data, aes(x = log(lambda), y = mse)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "lightblue") +
+  geom_point(aes(color = label), size = 2) +
+  geom_vline(xintercept = log(cv_lasso_raw$lambda.min), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = log(cv_lasso_raw$lambda.1se), linetype = "dotted", color = "darkgreen") +
+  scale_color_manual(values = c("min" = "red", "1se" = "darkgreen", "none" = "grey")) +
+  labs(
+    title = "LASSO Cross-Validation: Mean Squared Error vs log(Lambda)",
+    x = "log(Lambda)",
+    y = "Mean Squared Error (CV)",
+    color = "Lambda"
+  ) +
+  theme_minimal()
+
+# --- 5. Extract and tidy coefficients at lambda.min ---
+lasso_coefs <- coef(cv_lasso_raw, s = "lambda.min")
+
+# Convert sparse matrix to data frame safely
+lasso_coefs_df <- lasso_coefs %>%
+  as.matrix() %>%
+  data.frame() %>%
+  tibble::rownames_to_column(var = "variable")
+
+# Rename column safely (in case of unnamed column)
+names(lasso_coefs_df)[2] <- "coefficient"
+
+# --- 6. Plot coefficients if any non-zero (excluding intercept) ---
+lasso_coefs_df <- lasso_coefs_df %>%
+  filter(variable != "(Intercept)", coefficient != 0)
+
+if (nrow(lasso_coefs_df) == 0) {
+  message("⚠️ No variables were selected by LASSO at lambda.min.")
+} else {
+  lasso_coefs_df <- lasso_coefs_df %>%
+    mutate(abs_coef = abs(coefficient)) %>%
+    arrange(desc(abs_coef))
+  
+  ggplot(lasso_coefs_df, aes(x = reorder(variable, coefficient), y = coefficient, fill = coefficient > 0)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+    labs(
+      title = "LASSO-Selected Variables (No Intercept)",
+      subtitle = "Non-zero coefficients at lambda.min",
+      x = "Variable",
+      y = "Coefficient",
+      fill = "Direction"
+    ) +
+    theme_minimal()
+}
+
+
+# SAME WITH LOGGED DATA
+
+# --- 1. Prepare data ---
+x_log <- data_log %>%
+  select(-hdi_2010, -iso_a3, -country) %>%
+  as.matrix()
+
+y_log <- data_log$hdi_2010
+
+# --- 2. Run LASSO with cross-validation ---
+cv_lasso_log <- cv.glmnet(x_log, y_log, alpha = 1) 
+# alpha = 1 for LASSO (L1 regularization)
+
+# --- 3. Create tidy dataframe for ggplot of CV error ---
+lasso_plot_data_log <- data.frame(
+  lambda = cv_lasso_log$lambda,
+  mse = cv_lasso_log$cvm,
+  lower = cv_lasso_log$cvlo,
+  upper = cv_lasso_log$cvup
+) %>%
+  mutate(
+    label = case_when(
+      abs(lambda - cv_lasso_log$lambda.min) < 1e-10 ~ "min",
+      abs(lambda - cv_lasso_log$lambda.1se) < 1e-10 ~ "1se",
+      TRUE ~ "none"
+    )
+  )
+
+# --- 4. Plot cross-validation error ---
+ggplot(lasso_plot_data_log, aes(x = log(lambda), y = mse)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "lightblue") +
+  geom_point(aes(color = label), size = 2) +
+  geom_vline(xintercept = log(cv_lasso_log$lambda.min), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = log(cv_lasso_log$lambda.1se), linetype = "dotted", color = "darkgreen") +
+  scale_color_manual(values = c("min" = "red", "1se" = "darkgreen", "none" = "grey")) +
+  labs(
+    title = "LASSO Cross-Validation (Log Data): MSE vs log(Lambda)",
+    x = "log(Lambda)",
+    y = "Mean Squared Error (CV)",
+    color = "Lambda"
+  ) +
+  theme_minimal()
+# --- 5. Extract and tidy coefficients at lambda.min ---
+lasso_coefs_log <- coef(cv_lasso_log, s = "lambda.min")
+
+# Convert sparse matrix to data frame safely
+lasso_coefs_df_log <- lasso_coefs_log %>%
+  as.matrix() %>%
+  data.frame() %>%
+  tibble::rownames_to_column(var = "variable")
+
+# Rename column safely
+names(lasso_coefs_df_log)[2] <- "coefficient"
+
+# --- 6. Plot coefficients if any non-zero (excluding intercept) ---
+lasso_coefs_df_log <- lasso_coefs_df_log %>%
+  filter(variable != "(Intercept)", coefficient != 0)
+
+if (nrow(lasso_coefs_df_log) == 0) {
+  message("⚠️ No variables were selected by LASSO at lambda.min.")
+} else {
+  lasso_coefs_df_log <- lasso_coefs_df_log %>%
+    mutate(abs_coef = abs(coefficient)) %>%
+    arrange(desc(abs_coef))
+  
+  ggplot(lasso_coefs_df_log, aes(x = reorder(variable, coefficient), y = coefficient, fill = coefficient > 0)) +
+    geom_col() +
+    coord_flip() +
+    scale_fill_manual(values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+    labs(
+      title = "LASSO-Selected Variables (Log Data, No Intercept)",
+      subtitle = "Non-zero coefficients at lambda.min",
+      x = "Variable",
+      y = "Coefficient",
+      fill = "Direction (TRUE = Positive)"
+    ) +
+    theme_minimal()
+}
+
+
+# 1. Prepare data
+#    Remove non‐predictors (ISO code, country name) and the target from the predictors,
+#    but keep them in the data frame for formula interface.
+df_raw <- data %>%
+  select(-iso_a3, -country)    # hdi_2010 stays, for formula
+
+# 2. Fit a full (overgrown) regression tree
+#    method = "anova" for continuous response,
+#    control: cp=0.0001 to let it grow deep, xval=10 for 10‐fold CV.
+tree_raw <- rpart(
+  formula = hdi_2010 ~ ., 
+  data    = df_raw,
+  method  = "anova",
+  control = rpart.control(cp = 1e-4, xval = 10)
+)
+
+# 3. Examine the complexity‐parameter table
+#    tree_raw$cptable is a matrix with:
+#      CP: complexity parameter,
+#      nsplit: number of splits,
+#      rel error: training error relative to root,
+#      xerror: CV error relative to root,
+#      xstd: std. error of CV.
+cp_table_raw <- as_tibble(tree_raw$cptable, rownames = "row") %>%
+  rename(
+    cp       = CP,
+    n_splits = nsplit,
+    rel_err  = `rel error`,
+    x_err    = xerror,
+    x_std    = xstd
+  )
+
+# 4. Plot cross‐validation error vs complexity (cp)
+ggplot(cp_table_raw, aes(x = log(cp), y = x_err)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = x_err - x_std, ymax = x_err + x_std),
+              alpha = 0.2, fill = "lightblue") +
+  geom_point(size = 2) +
+  geom_vline(xintercept = log(cp_table_raw$cp[which.min(cp_table_raw$x_err)]),
+             linetype = "dashed", color = "red") +
+  labs(
+    title = "Tree CV Error vs log(CP) (raw data)",
+    x     = "log(CP)",
+    y     = "Relative CV Error"
+  ) +
+  theme_minimal()
+
+# 5. Choose the optimal CP
+#    cp_min: gives lowest CV error;
+#    cp_1se: the largest cp within 1 std‐error of the minimum (more conservative).
+min_row   <- which.min(cp_table_raw$x_err)
+cp_min    <- cp_table_raw$cp[min_row]
+cp_1se    <- cp_table_raw$cp[ max(which(cp_table_raw$x_err <= cp_table_raw$x_err[min_row] + cp_table_raw$x_std[min_row])) ]
+
+# 6. Prune the tree at cp_min (or cp_1se, if you prefer simpler model)
+pruned_raw <- prune(tree_raw, cp = cp_min)
+
+# visualize the pruned tree
+rpart.plot(pruned_raw, main = sprintf("Pruned Regression Tree (cp = %.5f)", cp_min))
+
+# 7. Extract variable importance
+#    rpart stores a named vector in $variable.importance
+varimp_raw <- pruned_raw$variable.importance %>%
+  enframe(name = "variable", value = "importance") %>%
+  arrange(desc(importance))
+
+# 8. Plot variable importance as a bar chart
+ggplot(varimp_raw, aes(x = reorder(variable, importance), y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Variable Importance (Pruned Tree, raw data)",
+    x     = "Variable",
+    y     = "Relative Importance"
+  ) +
+  theme_minimal()
+
+
+
+# Regression‐Tree Prediction (logged data) ---------------------------------
+
+# 1. Prepare logged data
+df_log <- data_log %>%
+  select(-iso_a3, -country)   # hdi_2010 stays
+
+# 2. Fit full tree on logged data
+tree_log <- rpart(
+  hdi_2010 ~ .,
+  data    = df_log,
+  method  = "anova",
+  control = rpart.control(cp = 1e-4, xval = 10)
+)
+
+# 3. CP table & tibble
+cp_table_log <- as_tibble(tree_log$cptable, rownames = "row") %>%
+  rename(cp = CP, n_splits = nsplit, rel_err = `rel error`, x_err = xerror, x_std = xstd)
+
+# 4. Plot CV error vs log(cp)
+ggplot(cp_table_log, aes(x = log(cp), y = x_err)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = x_err - x_std, ymax = x_err + x_std),
+              alpha = 0.2, fill = "lightblue") +
+  geom_point(size = 2) +
+  geom_vline(xintercept = log(cp_table_log$cp[which.min(cp_table_log$x_err)]),
+             linetype = "dashed", color = "red") +
+  labs(
+    title = "Tree CV Error vs log(CP) (log data)",
+    x     = "log(CP)",
+    y     = "Relative CV Error"
+  ) +
+  theme_minimal()
+
+# 5. Find cp_min, cp_1se for logged data
+min_row_log <- which.min(cp_table_log$x_err)
+cp_min_log  <- cp_table_log$cp[min_row_log]
+cp_1se_log  <- cp_table_log$cp[
+  max(which(cp_table_log$x_err <= cp_table_log$x_err[min_row_log] + cp_table_log$x_std[min_row_log]))
+]
+
+# 6. Prune at cp_min_log
+pruned_log <- prune(tree_log, cp = cp_min_log)
+rpart.plot(pruned_log, main = sprintf("Pruned Regression Tree (cp = %.5f) — logged data", cp_min_log))
+
+# 7. Variable importance (logged)
+varimp_log <- pruned_log$variable.importance %>%
+  enframe(name = "variable", value = "importance") %>%
+  arrange(desc(importance))
+
+# 8. Plot importance
+ggplot(varimp_log, aes(x = reorder(variable, importance), y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Variable Importance (Pruned Tree, log data)",
+    x     = "Variable",
+    y     = "Relative Importance"
+  ) +
+  theme_minimal()
 

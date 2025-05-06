@@ -3860,10 +3860,10 @@
     },
     "rpart": {
       "Package": "rpart",
-      "Version": "4.1.23",
+      "Version": "4.1.24",
       "Source": "Repository",
       "Priority": "recommended",
-      "Date": "2023-12-04",
+      "Date": "2025-01-06",
       "Authors@R": "c(person(\"Terry\", \"Therneau\", role = \"aut\", email = \"therneau@mayo.edu\"), person(\"Beth\", \"Atkinson\", role = c(\"aut\", \"cre\"), email = \"atkinson@mayo.edu\"), person(\"Brian\", \"Ripley\", role = \"trl\", email = \"ripley@stats.ox.ac.uk\", comment = \"producer of the initial R port, maintainer 1999-2017\"))",
       "Description": "Recursive partitioning for classification,  regression and survival trees.  An implementation of most of the  functionality of the 1984 book by Breiman, Friedman, Olshen and Stone.",
       "Title": "Recursive Partitioning and Regression Trees",
@@ -3885,6 +3885,27 @@
       "Repository": "CRAN",
       "URL": "https://github.com/bethatkinson/rpart, https://cran.r-project.org/package=rpart",
       "BugReports": "https://github.com/bethatkinson/rpart/issues"
+    },
+    "rpart.plot": {
+      "Package": "rpart.plot",
+      "Version": "3.1.2",
+      "Source": "Repository",
+      "Title": "Plot 'rpart' Models: An Enhanced Version of 'plot.rpart'",
+      "Author": "Stephen Milborrow",
+      "Maintainer": "Stephen Milborrow <milbo@sonic.net>",
+      "Depends": [
+        "R (>= 3.4.0)",
+        "rpart (>= 4.1-15)"
+      ],
+      "Suggests": [
+        "earth (>= 5.1.2)"
+      ],
+      "Description": "Plot 'rpart' models. Extends plot.rpart() and text.rpart() in the 'rpart' package.",
+      "License": "GPL-3",
+      "LazyData": "yes",
+      "URL": "http://www.milbo.org/rpart-plot/index.html",
+      "NeedsCompilation": "no",
+      "Repository": "CRAN"
     },
     "rstudioapi": {
       "Package": "rstudioapi",
