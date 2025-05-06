@@ -947,13 +947,13 @@ qqnorm(data_log$hdi_2010); qqline(data_log$hdi_2010, col = "blue")
 # Our goal is to understand the most influential variables on the hdi,
 # check sl/sup/variable_importance for more details
 
-
+data_scaled <- as.data.frame(scale(data[3:10])) # scale the data to have mean = 0 and sd = 1
 # Let's start with the linear regression
 
 # Linear regression on the original data
 # We should first exclude the multicollinearity variables: income and gdpp
 
-lm_model <- lm(hdi_2010 ~ ., data = data[3:10]) #until 10 to exclude 11: income and 12:gdpp
+lm_model <- lm(hdi_2010 ~ ., data = data_scaled) #until 10 to exclude 11: income and 12:gdpp
 summary(lm_model) # R uses the hdi_2010 inside data[3:10] as the target
 # The . operator means: "use all other columns in data[3:10] as predictors"
  
@@ -976,8 +976,9 @@ data[c(67, 114, 152), ]
 # same regression and residual analysis but with the logged data
 #
 #
+data_log_scaled <- as.data.frame(scale(data_log[3:10]))
 
-lm_model <- lm(hdi_2010 ~ ., data = data_log[3:10]) #exclude income and gdpp
+lm_model <- lm(hdi_2010 ~ ., data = data_log_scaled) #exclude income and gdpp
 summary(lm_model)
 
 # plot residuals
@@ -1007,7 +1008,7 @@ x_raw <- data %>%
 y_raw <- data$hdi_2010
 
 # --- 2. Run LASSO with cross-validation ---
-cv_lasso_raw <- cv.glmnet(x_raw, y_raw, alpha = 1) # alpha = 1 for LASSO
+cv_lasso_raw <- cv.glmnet(x_raw, y_raw, alpha = 1, standardize = TRUE) # alpha = 1 for LASSO
 # Uses k-fold cross-validation (default is 10-fold) to select the best value 
 # of λ (lambda), the penalty parameter.
 
@@ -1096,7 +1097,7 @@ x_log <- data_log %>%
 y_log <- data_log$hdi_2010
 
 # --- 2. Run LASSO with cross-validation ---
-cv_lasso_log <- cv.glmnet(x_log, y_log, alpha = 1) 
+cv_lasso_log <- cv.glmnet(x_log, y_log, alpha = 1, standardize = TRUE) 
 # alpha = 1 for LASSO (L1 regularization)
 
 # --- 3. Create tidy dataframe for ggplot of CV error ---
@@ -1132,13 +1133,13 @@ ggplot(lasso_plot_data_log, aes(x = log(lambda), y = mse)) +
 # --- 5. Extract and tidy coefficients at lambda.min ---
 lasso_coefs_log <- coef(cv_lasso_log, s = "lambda.min")
 
-# Convert sparse matrix to data frame safely
+# Convert sparse matrix to data frame 
 lasso_coefs_df_log <- lasso_coefs_log %>%
   as.matrix() %>%
   data.frame() %>%
   tibble::rownames_to_column(var = "variable")
 
-# Rename column safely
+# Rename column 
 names(lasso_coefs_df_log)[2] <- "coefficient"
 
 # --- 6. Plot coefficients if any non-zero (excluding intercept) ---
