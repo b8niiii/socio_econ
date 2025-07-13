@@ -4,7 +4,7 @@
 #  HELP International have been able to raise around $ 10 million. 
 # Now the CEO of the NGO needs to decide how to use this money strategically 
 # and effectively. So, CEO has to make decision to choose the countries that are 
-# in the direst need of aid. Hence, your Job as a Data scientist is to categorize
+# in the direst need of aid. Hence, they asked me, a Data scientist, to categorize
 # the countries using some socio-economic and health factors that determine the 
 # overall development of the country. Then you need to suggest the countries 
 # which the CEO needs to focus on the most. '''
@@ -35,13 +35,13 @@ library(tibble) # for rownames_to_column()
 library(rpart)         # recursive partitioning for regression trees
 library(rpart.plot)    # for nicer tree plots (optional)
 library(randomForest) # for random forests
-
+library(gbm) # for gradient boosting
 
 data <- read.csv("data/Country-data.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 dict <- read.csv("data/data-dictionary.csv", sep = ",", header = TRUE, na.strings = c("", "NA", "NULL")) # Read the CSV file
 
 summary(data)
-str(data)
+str(data) # Check the structure of the data
 sapply(data, function(x) sum(is.na(x))) # Check for missing values applying the function sum() to each column of data
 sapply(data, class) # Check for data types
 
@@ -105,7 +105,7 @@ shapiro_df
 # Perform Shapiro-Wilk test for each continuous variable - Log transformed
 
 
-# Apply log(x + 1) transformation to each element (column) in the 'data' list or data frame
+# Apply log(x + 5) transformation to each element (column) in the 'data' list or data frame
 # Since countries like Czech Republic, Ireland, Japan and Seychelles have negative inflation, and the lowest is -4,
 # we shift the values by adding 5 to avoid taking log of negative numbers
 data_log <- lapply(data[2:10], function(x) log(x + 5))
@@ -157,14 +157,16 @@ par(mfrow = c(1,1))# Close the current graphics device (if any) to reset plottin
 # Correlation matrix
 correlational_matrix <-cor(data[,2:10], use = "pairwise.complete.obs")
 corrplot(correlational_matrix, 
-         tl.col = "black")
+         tl.col = "black",  main = " Correlation Matrix", mar = c(0, 0, 2, 0),   # Top margin increased
+         cex.main = 1.5)   
 
 # WITH THIS PLOT WE CAN SEE HOW CHILD MORTALITY IS STRONGLY CORRELATED WITH OTHER VARIABLES
 
 
 cor_matrix <- cor(data_log[,1:9], use = "pairwise.complete.obs")  # Check correlation matrix
 corrplot(cor_matrix, 
-         tl.col = "black", main = "Log Correlation Matrix")  # Plot correlation matrix
+         tl.col = "black", main = "Log Correlation Matrix",mar = c(0, 0, 2, 0),   # Top margin increased
+         cex.main = 1.5)     # Plot correlation matrix
 
 # Covariance Matrix
 cov_matrix <- cov(data[2:10])
@@ -177,7 +179,7 @@ round(cor_matrix, 4)
 
 predictors <- data[-1]  # Excludes first column
 
-# Calculate VIF - method 1 (using first remaining column as placeholder)
+# Calculate VIF - using first remaining column as placeholder
 vif_model <- lm(
   as.formula(paste(names(predictors)[1], "~ .")),  # First predictor as placeholder
   data = predictors
@@ -197,9 +199,9 @@ print(vif_df)
 
 
 ### COMPUTE VIF ON THE LOGS
-predictors_log <- data_log[-1]  # Excludes first column
+predictors_log <- data_log  # Excludes first column
 
-# Calculate VIF - method 1 (using first remaining column as placeholder)
+# Calculate VIF - using first remaining column as placeholder
 vif_model <- lm(
   as.formula(paste(names(predictors_log)[1], "~ .")),  # First predictor as placeholder
   data = predictors_log
@@ -290,10 +292,10 @@ summary(lm(income ~ gdpp, data = data_scaled_log))
 # Income≈(GDP per capita) ^ 0.972
 
 
-# Correct intercept and beta from your model
+# Correct intercept and beta from the model
 # Define alpha and beta FIRST
-alpha <- 9.044e-16  # your intercept (very small)
-beta <- 0.972       # your slope
+alpha <- 9.044e-16  # intercept (very small)
+beta <- 0.972       # slope
 
 # Plot on original data
 ggplot(data, aes(x = gdpp, y = income)) +
@@ -308,7 +310,7 @@ ggplot(data, aes(x = gdpp, y = income)) +
 
 # not satisfied with the power law fit, let's try to fit a polynomial regression on original data
 # Fit quadratic model
-poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data)
+poly2_model <- lm(income ~ poly(gdpp, 2, raw = TRUE), data = data) # Fit a polynomial regression model of degree 2
 
 # Plot
 ggplot(data, aes(x = gdpp, y = income)) +
@@ -329,7 +331,7 @@ ggplot(data_scaled_log, aes(x = gdpp, y = income)) +
   geom_point(color = 'blue', alpha = 0.6) +
   geom_smooth(method = "lm", formula = y ~ poly(x, 2, raw = TRUE), color = 'red', size = 1.2) +
   labs(
-    title = "Quadratic Fit: Income vs GDP per capita",
+    title = "Quadratic Fit: Income vs GDP per capita (Log-Log Scale)",
     x = "GDP per capita",
     y = "Income"
   ) +
@@ -410,12 +412,11 @@ ggplot(data_scaled_log, aes(x = child_mort, y = income)) +
   theme_minimal()
 
 # Compare linear vs quadratic model
-linear_model <- lm(income ~ child_mort, data = data)
+linear_model <- lm(income ~ child_mort, data = data_scaled_log)
 summary(linear_model)
 summary(poly2_model)
-summary(poly2_model_log) 
 # also here the adj r^2 of the polynomial model is better than the linear one 
-# 0.380 vs 0.270
+
 
 
 
@@ -425,7 +426,7 @@ pca_result <- prcomp(data_scaled_log)
 summary(pca_result)
 
 
-# PCA from old project
+# PCA from old Statistical Learning project adapted.
 
 pca_result_var <- pca_result$sdev^2 # variance of each principal component
 pca_var_per <- round(pca_result_var/sum(pca_result_var)*100, 2) # percentage of variance explained by each component
@@ -685,7 +686,7 @@ wss_vals <- sapply(ks, function(k) wss(data_scaled_log, k))
 
 plot(ks, wss_vals, type="b",
      xlab="Number of clusters K",
-     ylab="Total within‐cluster SS",
+     ylab="Total within - cluster SS",
      main="Elbow method for K-means clustering")
 
 pc_scores <- as.data.frame(pca_result$x[, 1:4])  # pick top 4 PCs
@@ -707,7 +708,7 @@ km_pca <- kmeans(pc_scores, centers = k, nstart = 25)
 table(km_pca$cluster)
 
 
-# add the assignments back to your original data‐frame
+# add the assignments back to the original data‐frame
 df <- data.frame(data$country, data_scaled_log,
                  cluster_raw = factor(km_raw$cluster), # 
                  cluster_pca = factor(km_pca$cluster))
@@ -715,10 +716,14 @@ colnames(df)[1] <- "country" # rename the first column to "country"
 
 # visualize on PC1 vs PC2
 ggplot(df, aes(x = pca_result$x[,1], y = pca_result$x[,2], color = cluster_raw)) +
-  geom_point(alpha=0.7) + ggtitle("Clusters on raw data")
+  geom_point(alpha=0.7) + ggtitle("Clusters on Scaled Log Data")+
+  labs(x = "Principal Component 1 (PC1)", y = "Principal Component 2 (PC2)")
+
 
 ggplot(df, aes(x = pca_result$x[,1], y = pca_result$x[,2], color = cluster_pca)) +
-  geom_point(alpha=0.7) + ggtitle("Clusters on PCA data")
+  geom_point(alpha=0.7) + ggtitle("Clusters on PCA Data") +
+  labs(x = "Principal Component 1 (PC1)", y = "Principal Component 2 (PC2)")
+
 
 
 # 1) Add PC1/PC2 columns to your df
@@ -805,13 +810,16 @@ ggplot(world_clust) +
     name = "Cluster"
   ) +
   labs(title = "World Map of Countries by K-means Cluster",
-       subtitle = "Clusters computed on raw (scaled+logged) data") +
+       subtitle = "Clusters Computed on Raw Scaled & Logged Data") +
   theme_minimal() +
   theme(
     panel.grid.major = element_line(color = "transparent"),
     axis.text = element_blank(),
-    axis.ticks = element_blank()
+    axis.ticks = element_blank(),
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
   )
+
 
 #
 #
@@ -921,6 +929,7 @@ p6 <- ggplot(data_log, aes(y = hdi_2010)) +
   theme_minimal()
 
 grid.arrange(p1, p2, p3, p4,p5, p6, ncol = 2)
+grid.arrange(p1,  p3, p5, ncol = 1)
 
 
 # Now let's do the Shapiro-Wilk test for normality
@@ -949,15 +958,15 @@ qqnorm(data_log$hdi_2010); qqline(data_log$hdi_2010, col = "blue")
 # Our goal is to understand the most influential variables on the hdi,
 # check sl/sup/variable_importance for more details
 
-data_scaled <- as.data.frame(scale(data[3:10])) # scale the data to have mean = 0 and sd = 1 and drop income and gdpp 
+data_scaled <- as.data.frame(scale(data[3:11])) # scale the data to have mean = 0 and sd = 1 and drop income and gdpp 
 # Let's start with the linear regression
-
+#until 11 to exclude 12:gdpp
 # Linear regression on the original data
-# We should first exclude the multicollinearity variables: income and gdpp
+# We should first exclude the multicollinear variables: income and gdpp
 
-lm_model <- lm(hdi_2010 ~ ., data = data_scaled) #until 10 to exclude 11: income and 12:gdpp
-summary(lm_model) # R uses the hdi_2010 inside data[3:10] as the target
-# The . operator means: "use all other columns in data[3:10] as predictors"
+lm_model <- lm(hdi_2010 ~ ., data = data_scaled) 
+summary(lm_model) # R uses the hdi_2010 inside data[3:11] as the target
+# The . operator means: "use all other columns in data[3:11] as predictors"
  
 # plot residuals
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 4, 0))  # Larger top outer margin
@@ -978,7 +987,7 @@ data[c(67, 114, 152), ]
 # same regression and residual analysis but with the logged data
 #
 #
-data_log_scaled <- as.data.frame(scale(data_log[3:10])) # drop income and gdpp 
+data_log_scaled <- as.data.frame(scale(data_log[3:11])) # drop income and gdpp 
 
 lm_model <- lm(hdi_2010 ~ ., data = data_log_scaled) #exclude income and gdpp
 summary(lm_model)
@@ -990,7 +999,7 @@ par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 4, 0))  # Larger top out
 plot(lm_model, which = 1:4, col = "blue", pch = 19, cex = 0.7,sub.caption = "")
 
 # Add a global title, slightly lower than default to avoid overlap
-mtext("Diagnostic Plots for Linear Model", outer = TRUE, cex = 1.4, font = 2, line = 1)
+mtext("Diagnostic Plots for Linear Model on Logged Data", outer = TRUE, cex = 1.4, font = 2, line = 1)
 
 # the scale-location suggest slight heteroskedasticity, but doesn't seem anything concerning
 # the Cook's distance suggests that the following:
@@ -1004,11 +1013,11 @@ data[c(67, 150, 155), ]
 
 # --- 1. Prepare data ---
 x_raw <- data %>%
-  select(-hdi_2010, -iso_a3, -country) %>%
+  select(-hdi_2010, -iso_a3, -country, -gdpp) %>%
   as.matrix()
 
 y_raw <- data$hdi_2010
-
+# Note: We exclude 'gdpp' as it is highly correlated with 'income' and can lead to multicollinearity issues.
 # --- 2. Run LASSO with cross-validation ---
 cv_lasso_raw <- cv.glmnet(x_raw, y_raw, alpha = 1, standardize = TRUE) # alpha = 1 for LASSO
 # Uses k-fold cross-validation (default is 10-fold) to select the best value 
@@ -1088,12 +1097,28 @@ if (nrow(lasso_coefs_df) == 0) {
     theme_minimal()
 }
 
+# --- Summary table for LASSO on raw data ---
+lasso_summary_raw <- lasso_coefs_df %>%
+  mutate(
+    direction = ifelse(coefficient > 0, "Positive", "Negative")
+  ) %>%
+  arrange(desc(abs_coef)) %>%
+  transmute(
+    Rank = row_number(),
+    Variable = variable,
+    Coefficient = round(coefficient, 4),
+    Magnitude = round(abs_coef, 4),
+    Direction = direction
+  )
+
+# Print the summary table
+print(lasso_summary_raw)
 
 # SAME WITH LOGGED DATA
 
 # --- 1. Prepare data ---
 x_log <- data_log %>%
-  select(-hdi_2010, -iso_a3, -country) %>%
+  select(-hdi_2010, -iso_a3, -country, -gdpp) %>%
   as.matrix()
 
 y_log <- data_log$hdi_2010
@@ -1168,13 +1193,30 @@ if (nrow(lasso_coefs_df_log) == 0) {
     ) +
     theme_minimal()
 }
+# --- Summary table for LASSO on logged data ---
+lasso_summary_log <- lasso_coefs_df_log %>%
+  mutate(
+    direction = ifelse(coefficient > 0, "Positive", "Negative")
+  ) %>%
+  arrange(desc(abs_coef)) %>%
+  transmute(
+    Rank = row_number(),
+    Variable = variable,
+    Coefficient = round(coefficient, 4),
+    Magnitude = round(abs_coef, 4),
+    Direction = direction
+  )
+
+# Print the summary table
+print(lasso_summary_log)
 
 
+## TREE PREDICTOR
 # 1. Prepare data
 #    Remove non‐predictors (ISO code, country name) and the target from the predictors,
 #    but keep them in the data frame for formula interface.
 df_raw <- data %>%
-  select(-iso_a3, -country)    # hdi_2010 stays, for formula
+  select(-iso_a3, -country,-gdpp)    # hdi_2010 stays, for formula
 
 # 2. Fit a full (overgrown) regression tree
 #    method = "anova" for continuous response,
@@ -1228,6 +1270,7 @@ cp_1se    <- cp_table_raw$cp[ max(which(cp_table_raw$x_err <= cp_table_raw$x_err
 pruned_raw <- prune(tree_raw, cp = cp_min)
 
 # visualize the pruned tree
+X11()
 rpart.plot(pruned_raw, main = sprintf("Pruned Regression Tree (cp = %.5f)", cp_min))
 
 # 7. Extract variable importance
@@ -1247,13 +1290,26 @@ ggplot(varimp_raw, aes(x = reorder(variable, importance), y = importance)) +
   ) +
   theme_minimal()
 
+# Create summary table with top 4 variables
+varimp_summary_raw <- pruned_raw$variable.importance %>%
+  enframe(name = "Variable", value = "Importance") %>%
+  arrange(desc(Importance)) %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    Importance = round(Importance, 2)
+  ) %>%
+  select(Rank, Variable, Importance)
+
+# View the summary table
+print(varimp_summary_raw)
 
 
 # Regression‐Tree Prediction (logged data) ---------------------------------
 
 # 1. Prepare logged data
 df_log <- data_log %>%
-  select(-iso_a3, -country)   # hdi_2010 stays
+  select(-iso_a3, -country, -gdpp)   # hdi_2010 stays
 
 # 2. Fit full tree on logged data
 tree_log <- rpart(
@@ -1293,6 +1349,10 @@ cp_1se_log  <- cp_table_log$cp[
 pruned_log <- prune(tree_log, cp = cp_min_log)
 rpart.plot(pruned_log, main = sprintf("Pruned Regression Tree (cp = %.5f) — logged data", cp_min_log))
 
+X11()
+rpart.plot(pruned_log, main = sprintf("Pruned Regression Tree (cp = %.5f)", cp_min))
+
+
 # 7. Variable importance (logged)
 varimp_log <- pruned_log$variable.importance %>%
   enframe(name = "variable", value = "importance") %>%
@@ -1309,9 +1369,27 @@ ggplot(varimp_log, aes(x = reorder(variable, importance), y = importance)) +
   ) +
   theme_minimal()
 
+# Create summary table with top 4 variables
+varimp_summary_log <- pruned_log$variable.importance %>%
+  enframe(name = "Variable", value = "Importance") %>%
+  arrange(desc(Importance)) %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    Importance = round(Importance, 2)
+  ) %>%
+  select(Rank, Variable, Importance)
+
+# View the summary table
+print(varimp_summary_log)
+
+
+
+
+
 
 # 1. Prepare the data (raw)
-df_raw <- data %>% select(-iso_a3, -country)
+df_raw <- data %>% select(-iso_a3, -country, -gdpp)
 
 # 2. (Optional) Tune mtry
 # tune <- tuneRF(
@@ -1354,7 +1432,7 @@ ggplot(varimp_raw, aes(x = reorder(variable, IncMSE), y = IncMSE)) +
   theme_minimal()
 
 # 5. Repeat on log‐transformed data
-df_log <- data_log %>% select(-iso_a3, -country)
+df_log <- data_log %>% select(-iso_a3, -country, -gdpp)
 set.seed(42)
 rf_log <- randomForest(
   hdi_2010 ~ .,
@@ -1379,3 +1457,154 @@ ggplot(varimp_log, aes(x = reorder(variable, IncMSE), y = IncMSE)) +
   ) +
   theme_minimal()
 
+
+# Extract variable importance
+varimp_rf_raw_summary <- as.data.frame(importance(rf_raw)) %>%
+  rownames_to_column("variable") %>%
+  rename(IncMSE = `%IncMSE`) %>%
+  arrange(desc(IncMSE)) %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    IncMSE = round(IncMSE, 2)
+  ) %>%
+  select(Rank, Variable = variable, IncMSE)
+
+# View the summary table
+print(varimp_rf_raw_summary)
+
+# Extract variable importance
+varimp_rf_log_summary <- as.data.frame(importance(rf_log)) %>%
+  rownames_to_column("variable") %>%
+  rename(IncMSE = `%IncMSE`) %>%
+  arrange(desc(IncMSE)) %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    IncMSE = round(IncMSE, 2)
+  ) %>%
+  select(Rank, Variable = variable, IncMSE)
+
+# View the summary table
+print(varimp_rf_log_summary)
+
+
+
+# -------------------------------
+# Gradient Boosting (raw data)
+# -------------------------------
+
+# 1. Prepare data: drop ISO code & country, keep hdi_2010 as response
+df_raw_gbm <- data %>% select(-iso_a3, -country, -gdpp)
+
+# 2. Fit GBM with 10‐fold CV
+set.seed(42)
+gbm_raw <- gbm(
+  formula         = hdi_2010 ~ .,
+  data            = df_raw_gbm,
+  distribution    = "gaussian",
+  n.trees         = 5000,        # large maximum
+  interaction.depth = 3,         # tree depth
+  shrinkage       = 0.01,        # learning rate
+  n.minobsinnode  = 10,          # min obs per node
+  cv.folds        = 10,          # for cross‐validation
+  verbose         = FALSE
+)
+
+# 3. Determine optimal number of trees
+best_trees_raw <- gbm.perf(gbm_raw, method = "cv")
+
+# 4. Extract and tidy variable importance
+varimp_raw_gbm <- summary(
+  gbm_raw,
+  n.trees = best_trees_raw,
+  plotit  = FALSE
+) %>%
+  as_tibble() %>%
+  rename(variable = var, importance = rel.inf) %>%
+  arrange(desc(importance))
+
+# 5. Plot GBM variable importance
+ggplot(varimp_raw_gbm, aes(x = reorder(variable, importance), y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = sprintf("GBM Variable Importance (raw data, %d trees)", best_trees_raw),
+    x     = "Variable",
+    y     = "Relative Influence"
+  ) +
+  theme_minimal()
+
+
+# -------------------------------
+# Gradient Boosting (log data)
+# -------------------------------
+
+# 1. Prepare logged data
+df_log_gbm <- data_log %>% select(-iso_a3, -country, -gdpp)
+
+# 2. Fit GBM on log‐transformed data
+set.seed(42)
+gbm_log <- gbm(
+  formula         = hdi_2010 ~ .,
+  data            = df_log_gbm,
+  distribution    = "gaussian",
+  n.trees         = 5000,
+  interaction.depth = 3,
+  shrinkage       = 0.01,
+  n.minobsinnode  = 10,
+  cv.folds        = 10,
+  verbose         = FALSE
+)
+
+# 3. Optimal number of trees for log data
+best_trees_log <- gbm.perf(gbm_log, method = "cv")
+
+# 4. Extract & tidy importance
+varimp_log_gbm <- summary(
+  gbm_log,
+  n.trees = best_trees_log,
+  plotit  = FALSE
+) %>%
+  as_tibble() %>%
+  rename(variable = var, importance = rel.inf) %>%
+  arrange(desc(importance))
+
+# 5. Plot GBM importance on log data
+ggplot(varimp_log_gbm, aes(x = reorder(variable, importance), y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = sprintf("GBM Variable Importance (log data, %d trees)", best_trees_log),
+    x     = "Variable",
+    y     = "Relative Influence"
+  ) +
+  theme_minimal()
+# Create summary table with top 4 variables (raw data)
+varimp_summary_gbm_raw <- varimp_raw_gbm %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    importance = round(importance, 2)
+  ) %>%
+  select(Rank, Variable = variable, `Relative Influence` = importance)
+
+# View the summary table
+print(varimp_summary_gbm_raw)
+
+# Create summary table with top 4 variables (log data)
+varimp_summary_gbm_log <- varimp_log_gbm %>%
+  slice(1:4) %>%
+  mutate(
+    Rank = row_number(),
+    importance = round(importance, 2)
+  ) %>%
+  select(Rank, Variable = variable, `Relative Influence` = importance)
+
+# View the summary table
+print(varimp_summary_gbm_log)
+
+
+
+
+# 

@@ -1837,6 +1837,43 @@
       "Maintainer": "Gábor Csárdi <csardi.gabor@gmail.com>",
       "Repository": "CRAN"
     },
+    "gbm": {
+      "Package": "gbm",
+      "Version": "2.2.2",
+      "Source": "Repository",
+      "Title": "Generalized Boosted Regression Models",
+      "Authors@R": "c( person(\"Greg\", \"Ridgeway\", email = \"gridge@upenn.edu\", role = c(\"aut\", \"cre\"), comment = c(ORCID = \"0000-0001-6911-0804\")), person(\"Daniel\", \"Edwards\", email = \"unknown@unknown.com\", role = \"ctb\"), person(\"Brian\", \"Kriegler\", email = \"bkriegler@econone.com\", role = \"ctb\"), person(\"Stefan\", \"Schroedl\", email = \"stefan@atomwise.com\", role = \"ctb\"), person(\"Harry\", \"Southworth\", email = \"harry@dataclarityconsulting.co.uk\", role = \"ctb\"), person(\"Brandon\", \"Greenwell\", email = \"greenwell.brandon@gmail.com\", role = \"ctb\", comment = c(ORCID = \"0000-0002-8120-0084\")), person(\"Bradley\", \"Boehmke\", email = \"bradleyboehmke@gmail.com\", role = \"ctb\", comment = c(ORCID = \"0000-0002-3611-8516\")), person(\"Jay\", \"Cunningham\", email = \"james@notbadafterall.com\", role = \"ctb\"), person(\"GBM\", \"Developers\",  role = \"aut\",  comment = \"https://github.com/gbm-developers\") )",
+      "Depends": [
+        "R (>= 2.9.0)"
+      ],
+      "Imports": [
+        "lattice",
+        "parallel",
+        "survival"
+      ],
+      "Suggests": [
+        "covr",
+        "gridExtra",
+        "knitr",
+        "pdp",
+        "RUnit",
+        "splines",
+        "tinytest",
+        "vip",
+        "viridis"
+      ],
+      "Description": "An implementation of extensions to Freund and Schapire's AdaBoost  algorithm and Friedman's gradient boosting machine. Includes regression  methods for least squares, absolute loss, t-distribution loss, quantile  regression, logistic, multinomial logistic, Poisson, Cox proportional hazards  partial likelihood, AdaBoost exponential loss, Huberized hinge loss, and  Learning to Rank measures (LambdaMart). Originally developed by Greg Ridgeway. Newer version available at github.com/gbm-developers/gbm3.",
+      "License": "GPL (>= 2) | file LICENSE",
+      "URL": "https://github.com/gbm-developers/gbm",
+      "BugReports": "https://github.com/gbm-developers/gbm/issues",
+      "Encoding": "UTF-8",
+      "RoxygenNote": "7.3.1",
+      "VignetteBuilder": "knitr",
+      "NeedsCompilation": "yes",
+      "Author": "Greg Ridgeway [aut, cre] (<https://orcid.org/0000-0001-6911-0804>), Daniel Edwards [ctb], Brian Kriegler [ctb], Stefan Schroedl [ctb], Harry Southworth [ctb], Brandon Greenwell [ctb] (<https://orcid.org/0000-0002-8120-0084>), Bradley Boehmke [ctb] (<https://orcid.org/0000-0002-3611-8516>), Jay Cunningham [ctb], GBM Developers [aut] (https://github.com/gbm-developers)",
+      "Maintainer": "Greg Ridgeway <gridge@upenn.edu>",
+      "Repository": "CRAN"
+    },
     "generics": {
       "Package": "generics",
       "Version": "0.1.3",
@@ -3505,6 +3542,29 @@
       "NeedsCompilation": "yes",
       "VignetteBuilder": "R.rsp",
       "Author": "Roger Koenker [cre, aut], Stephen Portnoy [ctb] (Contributions to Censored QR code), Pin Tian Ng [ctb] (Contributions to Sparse QR code), Blaise Melly [ctb] (Contributions to preprocessing code), Achim Zeileis [ctb] (Contributions to dynrq code essentially identical to his dynlm code), Philip Grosjean [ctb] (Contributions to nlrq code), Cleve Moler [ctb] (author of several linpack routines), Yousef Saad [ctb] (author of sparskit2), Victor Chernozhukov [ctb] (contributions to extreme value inference code), Ivan Fernandez-Val [ctb] (contributions to extreme value inference code), Martin Maechler [ctb] (tweaks (src/chlfct.f, 'tiny','Large'), <https://orcid.org/0000-0002-8685-9910>), Brian D Ripley [trl, ctb] (Initial (2001) R port from S (to my everlasting shame -- how could I have been so slow to adopt R!) and for numerous other suggestions and useful advice)"
+    },
+    "randomForest": {
+      "Package": "randomForest",
+      "Version": "4.7-1.2",
+      "Source": "Repository",
+      "Title": "Breiman and Cutlers Random Forests for Classification and Regression",
+      "Date": "2022-01-24",
+      "Depends": [
+        "R (>= 4.1.0)",
+        "stats"
+      ],
+      "Suggests": [
+        "RColorBrewer",
+        "MASS"
+      ],
+      "Authors@R": "c(person(\"Leo\", \"Breiman\", role = \"aut\", comment = \"Fortran original\"), person(\"Adele\", \"Cutler\", role = \"aut\", comment = \"Fortran original\"), person(\"Andy\", \"Liaw\", role = c(\"aut\", \"cre\"), email = \"andy_liaw@merck.com\", comment = \"R port\"), person(\"Matthew\", \"Wiener\", role = \"aut\", comment = \"R port\"))",
+      "Description": "Classification and regression based on a forest of trees using random inputs, based on Breiman (2001) <DOI:10.1023/A:1010933404324>.",
+      "License": "GPL (>= 2)",
+      "URL": "https://www.stat.berkeley.edu/~breiman/RandomForests/",
+      "NeedsCompilation": "yes",
+      "Repository": "CRAN",
+      "Author": "Leo Breiman [aut] (Fortran original), Adele Cutler [aut] (Fortran original), Andy Liaw [aut, cre] (R port), Matthew Wiener [aut] (R port)",
+      "Maintainer": "Andy Liaw <andy_liaw@merck.com>"
     },
     "rappdirs": {
       "Package": "rappdirs",
