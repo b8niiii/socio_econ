@@ -1607,4 +1607,48 @@ print(varimp_summary_gbm_log)
 
 
 
-# 
+# ---- Aid Distribution Based on Need Index ----
+
+# Combine the k-means cluster assignments with the original data
+# (ensure row order matches between 'data' and clustering results)
+cluster3_data <- data %>% 
+  mutate(cluster_raw = km_raw$cluster) %>% 
+  filter(cluster_raw == 3)
+
+# Simple min-max normalization helper
+normalize <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# Normalize variables and invert the ones where lower values mean higher need
+cluster3_data <- cluster3_data %>%
+  mutate(
+    child_mort_norm = normalize(child_mort),
+    income_norm     = 1 - normalize(income),
+    total_fer_norm  = normalize(total_fer),
+    life_expec_norm = 1 - normalize(life_expec),
+    health_norm     = normalize(health)
+  )
+
+# Weighted index of need (higher means more aid required)
+cluster3_data <- cluster3_data %>%
+  mutate(
+    need_index = 0.30 * child_mort_norm +
+                 0.25 * income_norm +
+                 0.19 * total_fer_norm +
+                 0.12 * life_expec_norm +
+                 0.08 * health_norm
+  )
+
+# Rank countries by the computed index and allocate 10M proportionally
+fund_total <- 10e6
+allocation <- cluster3_data %>%
+  arrange(desc(need_index)) %>%
+  slice(1:10) %>%
+  mutate(
+    aid_share  = need_index / sum(need_index),
+    aid_amount = aid_share * fund_total
+  ) %>%
+  select(country, aid_amount, aid_share, need_index)
+
+print(allocation)
